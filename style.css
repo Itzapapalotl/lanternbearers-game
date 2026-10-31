@@ -1,0 +1,1412 @@
+/* Lanternbearers: screens, HUD and dice tray.
+   Deep indigo and midnight panels, lantern-gold trim, parchment-cream text.
+   The board's place on screen is computed here in CSS, so canvas and HUD always agree. */
+
+:root {
+  --ink: #090818;
+  --night: #100e28;
+  --indigo: #1b1843;
+  --indigo-2: #272260;
+  --indigo-3: #3a3488;
+  --slate: #48508f;
+  --gold: #f4c25a;
+  --gold-2: #ffe29a;
+  --gold-deep: #b9771f;
+  --ember: #f08a3c;
+  --cream: #fbf0d6;
+  --cream-dim: #d9cdb2;
+  --muted: #a9a3c9;
+  --cyan: #74e4ff;
+  --heart: #ff5d73;
+  --heart-deep: #b8243d;
+  --green: #84e6a6;
+  --violet: #a985ff;
+  --font-head: 'Pixelify Sans', 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Lexend', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --radius: 14px;
+  --panel-bg: linear-gradient(180deg, rgba(36, 31, 88, 0.97), rgba(17, 15, 46, 0.98));
+  --panel-edge: rgba(244, 194, 90, 0.62);
+  --glow: 0 0 22px rgba(244, 194, 90, 0.28);
+
+  /* Wide screens: the HUD is a column on the right. */
+  --side: clamp(300px, calc(100vw - 150vh), 440px);
+  --dock: 0px;
+  --bw: min(calc(100vw - var(--side)), 150vh);
+  --bh: calc(var(--bw) / 1.5);
+  --bx: calc((100vw - var(--side) - var(--bw)) / 2);
+  --by: calc((100vh - var(--bh)) / 2);
+}
+
+/* Squarer screens (a 4:3 tablet): the HUD docks along the bottom instead. */
+@media (max-aspect-ratio: 155/100) {
+  :root {
+    --side: 0px;
+    --dock: clamp(160px, calc(100vh - 66.667vw), 260px);
+    --bw: min(100vw, calc((100vh - var(--dock)) * 1.5));
+    --bh: calc(var(--bw) / 1.5);
+    --bx: calc((100vw - var(--bw)) / 2);
+    --by: calc((100vh - var(--dock) - var(--bh)) / 2);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 30%, #1d1a4a 0%, var(--night) 55%, var(--ink) 100%);
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+button, input { font: inherit; color: inherit; }
+img { -webkit-user-drag: none; }
+[hidden] { display: none !important; }
+
+.lb-noscript { padding: 40px; font-size: 22px; text-align: center; }
+
+/* ---------- The board ---------- */
+.lb-board-wrap {
+  position: fixed;
+  left: var(--bx);
+  top: var(--by);
+  width: var(--bw);
+  height: var(--bh);
+  border-radius: 10px;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 60%, #221d4d, #0c0b20 75%);
+  box-shadow: 0 0 0 2px rgba(244, 194, 90, 0.35), 0 0 0 6px rgba(9, 8, 24, 0.9), 0 18px 50px rgba(0, 0, 0, 0.6);
+}
+.lb-board { display: block; width: 100%; height: 100%; touch-action: manipulation; }
+.lb-shake .lb-board-wrap { animation: lb-shake 0.42s ease-out; }
+
+/* ---------- The UI layer ---------- */
+.lb-ui-root {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+.lb-ui-root button, .lb-ui-root input, .lb-ui-root a,
+.lb-side, .lb-map, .lb-screen, .lb-over, .lb-modal { pointer-events: auto; }
+
+.lb-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.lb-ico { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.lb-ico.fill { fill: currentColor; stroke: none; }
+
+/* ---------- Buttons ---------- */
+.lb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 9px 18px;
+  border-radius: 12px;
+  border: 2px solid rgba(244, 194, 90, 0.5);
+  background: linear-gradient(180deg, #332c78, #1d1949);
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 19px;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 4px 0 #0b0a22, 0 8px 18px rgba(0, 0, 0, 0.35);
+  transition: transform 0.12s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease, opacity 0.2s;
+  text-align: left;
+}
+.lb-btn .lb-ico { width: 26px; height: 26px; color: var(--gold); }
+.lb-btn:hover { border-color: var(--gold); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 4px 0 #0b0a22, 0 0 20px rgba(244, 194, 90, 0.35); }
+.lb-btn:active { transform: translateY(3px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 0 #0b0a22; }
+.lb-btn:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+.lb-btn[disabled] { opacity: 0.45; cursor: default; filter: saturate(0.5); }
+
+.lb-btn-gold {
+  background: linear-gradient(180deg, #ffe7a3 0%, #f4c25a 45%, #d58f2a 100%);
+  border-color: #fff1c4;
+  color: #2a1a05;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 4px 0 #7a4a10, 0 0 26px rgba(244, 194, 90, 0.45);
+}
+.lb-btn-gold .lb-ico { color: #3a2306; }
+.lb-btn-gold:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 4px 0 #7a4a10, 0 0 34px rgba(255, 214, 120, 0.7); }
+.lb-btn-gold:active { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 0 #7a4a10; }
+
+.lb-btn-big { min-height: 62px; padding: 12px 28px; font-size: 23px; border-radius: 16px; }
+.lb-btn-big .lb-ico { width: 30px; height: 30px; }
+.lb-btn-ghost { background: rgba(16, 14, 42, 0.55); border-color: rgba(251, 240, 214, 0.28); box-shadow: none; }
+.lb-btn-ghost:active { box-shadow: none; }
+
+.lb-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  border: 2px solid rgba(244, 194, 90, 0.4);
+  background: rgba(20, 18, 52, 0.85);
+  color: var(--gold-2);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+}
+.lb-icon-btn:hover { border-color: var(--gold); box-shadow: var(--glow); }
+.lb-icon-btn:active { transform: translateY(2px); }
+.lb-icon-btn:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.lb-icon-btn.is-off { color: var(--muted); border-color: rgba(169, 163, 201, 0.4); }
+
+.lb-speak {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 6px 14px 6px 10px;
+  border-radius: 999px;
+  border: 2px solid rgba(116, 228, 255, 0.5);
+  background: rgba(16, 30, 60, 0.75);
+  color: #dff8ff;
+  font-weight: 600;
+  font-size: 17px;
+  cursor: pointer;
+}
+.lb-speak .lb-ico { color: var(--cyan); }
+.lb-speak:hover { border-color: var(--cyan); box-shadow: 0 0 18px rgba(116, 228, 255, 0.35); }
+.lb-speak.is-speaking .lb-ico { animation: lb-pulse 1s ease-in-out infinite; }
+
+/* ---------- Panels ---------- */
+.lb-panel {
+  position: relative;
+  background: var(--panel-bg);
+  border: 2px solid var(--panel-edge);
+  border-radius: 18px;
+  box-shadow: 0 0 0 5px rgba(9, 8, 24, 0.75), 0 0 40px rgba(244, 194, 90, 0.16), inset 0 0 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+/* Small gold diamonds on the corners, like lantern rivets. */
+.lb-panel::before, .lb-panel::after {
+  content: '';
+  position: absolute;
+  top: -7px;
+  width: 12px;
+  height: 12px;
+  background: linear-gradient(135deg, var(--gold-2), var(--gold-deep));
+  transform: rotate(45deg);
+  box-shadow: 0 0 10px rgba(244, 194, 90, 0.7);
+}
+.lb-panel::before { left: 18px; }
+.lb-panel::after { right: 18px; }
+
+.lb-h1, .lb-h2, .lb-h3 { font-family: var(--font-head); font-weight: 600; margin: 0; letter-spacing: 0.02em; }
+.lb-h1 { font-size: 44px; color: var(--gold-2); text-shadow: 0 2px 0 #4b2b06, 0 0 24px rgba(244, 194, 90, 0.55); }
+.lb-h2 { font-size: 32px; color: var(--gold-2); text-shadow: 0 2px 0 #3d2405, 0 0 18px rgba(244, 194, 90, 0.45); }
+.lb-h3 { font-size: 24px; color: var(--gold-2); }
+.lb-p { margin: 0; font-size: 20px; color: var(--cream); }
+.lb-small { font-size: 16px; color: var(--cream-dim); }
+.lb-rule {
+  height: 2px;
+  border: 0;
+  margin: 12px auto;
+  width: 70%;
+  background: linear-gradient(90deg, transparent, rgba(244, 194, 90, 0.75), transparent);
+}
+
+/* ---------- HUD: the side column (wide) or bottom dock (4:3) ---------- */
+.lb-hud { position: fixed; inset: 0; pointer-events: none; }
+.lb-side {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--side);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 12px 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  background: linear-gradient(90deg, rgba(9, 8, 24, 0) 0, rgba(13, 11, 34, 0.85) 10px, #100e2a 40px);
+}
+.lb-side-head { display: flex; align-items: center; gap: 8px; min-height: 46px; }
+.lb-roomname { flex: 1; min-width: 0; line-height: 1.1; }
+.lb-roomname b { display: block; font-family: var(--font-head); font-weight: 600; font-size: 21px; color: var(--gold-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-side.is-monsters .lb-roomname b { color: #cdb6ff; }
+.lb-roomname.is-room b { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.05; }
+.lb-roomname span { font-size: 16px; color: var(--muted); }
+.lb-tools { display: flex; gap: 6px; }
+
+.lb-section-label { font-family: var(--font-head); font-size: 16px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 2px; }
+
+/* Hero bar */
+.lb-heroes { display: flex; flex-direction: column; gap: 7px; }
+.lb-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 66px;
+  padding: 6px 8px 6px 6px;
+  border-radius: 14px;
+  border: 2px solid rgba(251, 240, 214, 0.14);
+  background: linear-gradient(180deg, rgba(39, 34, 96, 0.9), rgba(22, 19, 56, 0.92));
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.15s ease, border-color 0.15s, box-shadow 0.2s, opacity 0.2s, filter 0.2s;
+}
+.lb-hero:hover { border-color: rgba(244, 194, 90, 0.6); }
+.lb-hero:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.lb-hero.is-selected {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, rgba(74, 58, 120, 0.95), rgba(38, 30, 80, 0.95));
+  box-shadow: 0 0 0 2px rgba(244, 194, 90, 0.35), 0 0 22px rgba(244, 194, 90, 0.4);
+  transform: translateX(-4px);
+}
+.lb-hero.is-done { opacity: 0.62; filter: saturate(0.55); }
+/* Knocked down reads as "Dizzy": a soft violet card, the portrait stays in full colour (ux #5). */
+.lb-hero.is-down { border-color: rgba(169, 133, 255, 0.7); background: linear-gradient(180deg, rgba(58, 42, 112, 0.92), rgba(30, 22, 66, 0.94)); }
+
+.lb-portrait {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--hero, #4a7be0) 70%, #fff 10%), #15123a 80%);
+  border: 3px solid color-mix(in srgb, var(--hero, #4a7be0) 55%, #f4c25a 45%);
+  box-shadow: 0 0 0 2px rgba(9, 8, 24, 0.9), inset 0 -6px 10px rgba(0, 0, 0, 0.35);
+}
+.lb-portrait .lb-crop { position: absolute; inset: 0; background-repeat: no-repeat; }
+.lb-portrait .lb-initial { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-head); font-size: 26px; color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4); }
+.lb-hero.is-selected .lb-portrait { border-color: var(--gold-2); box-shadow: 0 0 0 2px rgba(9, 8, 24, 0.9), 0 0 16px rgba(255, 226, 154, 0.8); }
+
+.lb-hero-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.lb-hero-top { display: flex; align-items: center; gap: 6px; }
+.lb-hero-name { font-family: var(--font-head); font-weight: 600; font-size: 21px; line-height: 1; color: var(--cream); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-hero-state {
+  flex: none;
+  font-size: 16px; /* 16 px floor for words kids read (ux #13) */
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #1d1406;
+  background: var(--gold);
+}
+.lb-hero.is-done .lb-hero-state { background: rgba(169, 163, 201, 0.35); color: var(--cream); }
+.lb-hero.is-down .lb-hero-state { background: var(--violet); color: #1a0f3a; }
+.lb-hero.is-waiting .lb-hero-state { background: rgba(116, 228, 255, 0.85); }
+/* The player's own name beside their hero (ux #4), and gear that keeps (playtest L2). */
+.lb-player { flex: 0 1 auto; min-width: 0; font-size: 16px; font-weight: 600; color: var(--cyan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-hero-name { flex: none; } /* the hero's name is never cut; the player's name gives way first */
+/* Gear badges sit on the portrait's left edge (statuses are bottom right), so the name row has room. */
+.lb-face .lb-gear { position: absolute; left: -6px; top: -5px; display: flex; flex-direction: column; gap: 1px; color: var(--gold-2); }
+.lb-hero-state { margin-left: auto; }
+.lb-gear-ico { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #3a2a0c; box-shadow: 0 0 0 2px #15123a, inset 0 0 0 1px rgba(244, 194, 90, 0.7); }
+.lb-gear-ico .lb-ico { width: 13px; height: 13px; }
+
+.lb-hearts { display: flex; align-items: center; gap: 6px; }
+.lb-hearts > .lb-ico { width: 20px; height: 20px; color: var(--heart); filter: drop-shadow(0 0 4px rgba(255, 93, 115, 0.6)); }
+.lb-hp-text { font-weight: 700; font-size: 18px; min-width: 50px; font-variant-numeric: tabular-nums; }
+.lb-hp-bar { flex: 1; height: 10px; border-radius: 6px; background: rgba(0, 0, 0, 0.45); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); overflow: hidden; }
+.lb-hp-bar i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(180deg, #ff8a9a, var(--heart) 50%, var(--heart-deep)); transition: width 0.5s ease; }
+.lb-hp-bar.is-low i { background: linear-gradient(180deg, #ffb27a, var(--ember)); }
+.lb-pip-mini { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: rgba(244, 194, 90, 0.2); color: var(--gold-2); box-shadow: inset 0 0 0 1px rgba(244, 194, 90, 0.5); }
+.lb-pip-mini .lb-ico { width: 15px; height: 15px; }
+.lb-pip-mini.is-used { background: rgba(255, 255, 255, 0.05); color: rgba(217, 205, 178, 0.35); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
+.lb-hero-top { justify-content: space-between; }
+.lb-hearts .lb-pips { margin-left: 2px; }
+.lb-pips { display: flex; gap: 4px; }
+.lb-pip { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 600; color: var(--gold-2); padding: 0 6px 0 4px; border-radius: 999px; background: rgba(244, 194, 90, 0.16); }
+.lb-pip .lb-ico { width: 15px; height: 15px; }
+.lb-pip.is-used { color: rgba(217, 205, 178, 0.45); background: rgba(255, 255, 255, 0.05); text-decoration: line-through; }
+.lb-face { position: relative; flex: none; display: block; }
+.lb-face .lb-status { position: absolute; right: -6px; bottom: -6px; display: flex; flex-direction: row-reverse; gap: 2px; }
+.lb-status-ico { box-shadow: 0 0 0 2px #15123a; }
+.lb-status-ico { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #1f3a5c; color: var(--cyan); }
+.lb-status-ico .lb-ico { width: 15px; height: 15px; }
+.lb-status-ico.s-dizzy { background: #5a3fa8; color: #ffe29a; }
+.lb-status-ico.s-sleepy { background: #3d2a73; color: #d9c8ff; }
+.lb-status-ico.s-shield { background: #24427e; color: #c4d8ff; }
+.lb-status-ico.s-bright-oil { background: #6a4a12; color: var(--gold-2); }
+.lb-status-ico.s-feather { background: #1f5a4a; color: #b8ffe6; }
+
+/* Turn hint and the action bar */
+.lb-turn {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(244, 194, 90, 0.08);
+  border: 1px solid rgba(244, 194, 90, 0.25);
+  font-size: 17px;
+  line-height: 1.3;
+  color: var(--cream);
+}
+.lb-turn b { color: var(--gold-2); }
+.lb-turn.is-monsters { background: rgba(169, 133, 255, 0.12); border-color: rgba(169, 133, 255, 0.4); }
+.lb-turn-round { display: none; } /* the column's header shows the round; the 4:3 dock shows it here */
+.lb-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.lb-actions .lb-btn { min-width: 0; }
+.lb-actions .lb-btn { min-height: 50px; padding: 6px 10px; font-size: 18px; gap: 7px; justify-content: flex-start; }
+.lb-actions .lb-btn .lb-ico { width: 24px; height: 24px; }
+.lb-actions .lb-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-actions .lb-wide { grid-column: 1 / -1; justify-content: center; }
+.lb-endturn .lb-btn { width: 100%; justify-content: center; }
+.lb-endturn:empty { display: none; }
+/* While heroes still have a go, the party's button is calm; it turns gold once everyone is done. */
+.lb-endturn .lb-btn-quiet { color: var(--cream-dim); }
+.lb-endturn .lb-btn-quiet .lb-ico { color: var(--muted); }
+/* The monsters' turn, shown where the party's button sits (ux #4). */
+.lb-monsters-chip { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; padding: 6px 16px; border-radius: 12px; border: 2px solid rgba(169, 133, 255, 0.75); background: linear-gradient(180deg, rgba(74, 47, 143, 0.95), rgba(38, 26, 90, 0.95)); color: #e9e0ff; font-family: var(--font-head); font-size: 21px; box-shadow: 0 0 18px rgba(169, 133, 255, 0.35); }
+.lb-monsters-chip .lb-ico { color: #cdb6ff; }
+.lb-act-attack .lb-ico { color: #ff9a7a; }
+.lb-act-ability { border-color: rgba(169, 133, 255, 0.7); background: linear-gradient(180deg, #4a2f8f, #261a5a); }
+.lb-act-ability .lb-ico { color: #e3d2ff; }
+/* An ability button says what it does on a second line (ux #6). */
+.lb-act-text { display: flex; flex-direction: column; align-items: center; min-width: 0; line-height: 1.15; }
+.lb-actions .lb-btn .lb-act-sub { font-size: 16px; font-weight: 500; color: #dcccff; }
+.lb-act-mend .lb-ico, .lb-act-help .lb-ico { color: var(--green); }
+.lb-act-light .lb-ico { color: var(--ember); }
+.lb-act-open .lb-ico { color: var(--gold-2); }
+.lb-act-wait .lb-ico { color: var(--muted); }
+.lb-actions .lb-btn.is-active { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(116, 228, 255, 0.35), 0 0 18px rgba(116, 228, 255, 0.35); }
+.lb-actions-empty { grid-column: 1 / -1; font-size: 16px; color: var(--muted); text-align: center; padding: 4px; }
+
+/* Party bag */
+/* On wide screens the bag hangs on the board's back wall, top right, opposite the map. */
+.lb-bag {
+  position: fixed;
+  top: calc(var(--by) + 8px);
+  right: calc(var(--side) + var(--bx) + 8px);
+  max-width: clamp(170px, calc(var(--bw) * 0.25), 320px);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px 8px;
+  border-radius: 12px;
+  background: rgba(10, 9, 28, 0.8);
+  border: 1px solid rgba(244, 194, 90, 0.4);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.lb-bag-head { gap: 12px; }
+.lb-bag-title { font-size: 16px; }
+.lb-bag-head { display: flex; align-items: center; justify-content: space-between; }
+.lb-gold { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 19px; color: var(--gold-2); }
+.lb-gold .lb-coin { width: 24px; height: 24px; }
+.lb-bag-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.lb-item {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  padding: 3px;
+  border-radius: 12px;
+  border: 2px solid rgba(251, 240, 214, 0.16);
+  background: radial-gradient(circle at 50% 40%, rgba(80, 70, 160, 0.6), rgba(20, 18, 50, 0.9));
+  cursor: default;
+}
+.lb-item img, .lb-item .lb-ph { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5)); }
+.lb-item .lb-count {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 11px;
+  background: var(--gold);
+  color: #241504;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #120f30;
+}
+.lb-item.is-usable { cursor: pointer; border-color: var(--gold); box-shadow: 0 0 16px rgba(244, 194, 90, 0.55); animation: lb-breathe 2.4s ease-in-out infinite; }
+.lb-item.is-usable:hover { transform: translateY(-2px); }
+.lb-bag.is-empty .lb-bag-items, .lb-bag-tip:empty { display: none; }
+.lb-bag-tip { font-size: 16px; color: var(--gold-2); }
+
+/* Dungeon map and message ribbon sit on the board's back wall, above the playable squares. */
+.lb-map {
+  position: fixed;
+  left: calc(var(--bx) + 8px);
+  top: calc(var(--by) + 8px);
+  width: clamp(92px, calc(var(--bw) * 0.105), 150px);
+  padding: 6px 6px 4px;
+  border-radius: 12px;
+  background: rgba(10, 9, 28, 0.78);
+  border: 1px solid rgba(244, 194, 90, 0.4);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.lb-map svg { display: block; width: 100%; height: auto; }
+.lb-map .m-link { stroke: rgba(244, 194, 90, 0.55); stroke-width: 2.5; stroke-dasharray: 3 3; }
+.lb-map .m-room { fill: #2b2668; stroke: rgba(244, 194, 90, 0.75); stroke-width: 2; }
+.lb-map .m-here { fill: var(--gold); stroke: #fff3cf; stroke-width: 2.5; filter: drop-shadow(0 0 4px rgba(255, 214, 120, 0.95)); }
+.lb-map .m-boss { fill: #4a2775; }
+.lb-map .m-here-ring { fill: none; stroke: var(--gold-2); stroke-width: 1.5; opacity: 0.8; animation: lb-ring 2.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.lb-map-label { display: block; margin-top: 3px; font-family: var(--font-head); font-size: 16px; line-height: 1.1; text-align: center; color: var(--gold-2); }
+.lb-map.is-parchment { width: clamp(150px, calc(var(--bw) * 0.2), 300px); padding: 5px 5px 4px; }
+
+/* The painted parchment map (ui.js parchmentMap): the crop comes inline, markers sit on room centres. */
+.lb-pmap { position: relative; width: 100%; aspect-ratio: var(--pm-ar, 2.34); overflow: hidden; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(70, 44, 14, 0.6), inset 0 0 18px rgba(60, 34, 8, 0.45); }
+.lb-pmap-art { position: absolute; inset: 0; background-repeat: no-repeat; }
+.lb-pmap i, .lb-pmap b { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
+/* Rooms nobody has seen yet fade under the parchment's own colour (doorway rooms stay clear). */
+.lb-pmap .pm-fog { border-radius: 50%; background: radial-gradient(closest-side, rgba(218, 172, 112, 0.9), rgba(218, 172, 112, 0.8) 50%, rgba(214, 166, 104, 0.45) 78%, rgba(214, 166, 104, 0) 100%); }
+/* Visited rooms glow like a lit lantern, and the room you're in pulses. */
+.lb-pmap .pm-seen, .lb-pmap .pm-here { aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, #fffbe6 0 28%, #ffd36a 55%, #d9861f 100%); }
+.lb-pmap .pm-seen { width: clamp(7px, 3.6%, 16px); box-shadow: 0 0 0 1.5px rgba(80, 40, 6, 0.75), 0 0 8px 3px rgba(255, 196, 90, 0.8); }
+.lb-pmap .pm-here { width: clamp(10px, 5%, 22px); box-shadow: 0 0 0 2px #fff3cf, 0 0 0 3.5px rgba(80, 40, 6, 0.8), 0 0 14px 5px rgba(255, 214, 120, 0.95); }
+.lb-pmap .pm-here::after, .lb-pmap .pm-dest::after { content: ''; position: absolute; inset: -55%; border-radius: 50%; border: 2px solid var(--gold-2); animation: lb-ring 1.8s ease-out infinite; }
+/* Where each doorway leads: a cyan badge with the same arrow as its door button. */
+.lb-pmap .pm-dest { display: grid; place-items: center; width: clamp(20px, 7%, 36px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #1d4a78, #0b1f3e); color: #e6fbff; box-shadow: 0 0 0 2px var(--cyan), 0 0 0 4px rgba(6, 20, 40, 0.8), 0 0 16px 5px rgba(116, 228, 255, 0.65); transition: transform 0.2s ease, box-shadow 0.2s ease; }
+.lb-pmap .pm-dest::after { inset: -35%; border-color: var(--cyan); animation-duration: 1.5s; }
+.lb-pmap .pm-dest .lb-ico { width: 64%; height: 64%; stroke-width: 2.6; }
+.lb-pmap .pm-dest.is-hot { transform: translate(-50%, -50%) scale(1.3); box-shadow: 0 0 0 3px #fff, 0 0 0 5px rgba(6, 20, 40, 0.8), 0 0 24px 9px rgba(116, 228, 255, 0.9); }
+.lb-cleared-map { flex: none; width: calc(clamp(132px, calc(var(--bh) * 0.27), 240px) * 2.34 + 8px); max-width: 100%; padding: 4px; border-radius: 12px; background: linear-gradient(180deg, #6b4a22, #3d2810); box-shadow: 0 0 0 1px rgba(244, 194, 90, 0.5), 0 8px 20px rgba(0, 0, 0, 0.45); }
+/* Each doorway's room name sits beside its marker, and the marker is a door too (ux #9). */
+.lb-pmap .pm-dest .pm-name { position: absolute; left: calc(100% + 7px); top: 50%; transform: translateY(-50%); white-space: nowrap; padding: 2px 10px; border-radius: 999px; background: rgba(11, 31, 62, 0.92); box-shadow: 0 0 0 1.5px var(--cyan), 0 2px 8px rgba(0, 0, 0, 0.5); color: #e6fbff; font-family: var(--font-head); font-size: 16px; line-height: 1.25; }
+.lb-pmap .pm-dest.is-left .pm-name { left: auto; right: calc(100% + 7px); }
+.lb-pmap .pm-dest { z-index: 2; } /* above the fog of rooms not seen yet, which its name may cross */
+.lb-cleared .lb-pmap .pm-dest { pointer-events: auto; cursor: pointer; }
+
+.lb-ribbon {
+  position: fixed;
+  left: calc(var(--bx) + var(--bw) / 2);
+  top: calc(var(--by) + var(--bh) * 0.03);
+  transform: translateX(-50%);
+  max-width: calc(var(--bw) * 0.5);
+  min-width: 240px;
+  padding: 10px 30px;
+  text-align: center;
+  font-size: clamp(18px, calc(var(--bh) * 0.03), 26px);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--cream);
+  background: linear-gradient(180deg, rgba(40, 34, 96, 0.94), rgba(20, 17, 52, 0.94));
+  border: 2px solid rgba(244, 194, 90, 0.6);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 24px rgba(244, 194, 90, 0.22);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.lb-busy .lb-side { pointer-events: none; }
+/* The bag hangs on the board, where a half-faded copy looked like a ghost over the painting:
+   it stays crisp (the banner's own dim covers it). The ribbon steps aside for the banner. */
+.lb-busy .lb-side > :not(.lb-bag) { opacity: 0.5; transition: opacity 0.3s ease; }
+.lb-busy .lb-hud .lb-ribbon { opacity: 0; transform: translate(-50%, -10px); animation: none; }
+/* While the board plays a move (main.js adds lb-anim) the controls rest; they only dim if it takes a while. */
+.lb-anim .lb-side { pointer-events: none; }
+.lb-anim .lb-actions, .lb-anim .lb-endturn, .lb-anim .lb-bag-items { opacity: 0.55; transition: opacity 0.2s ease 0.35s; }
+/* Every hero has had their go (main.js adds lb-all-done): End party turn glows. */
+.lb-all-done .lb-endturn .lb-btn-gold { animation: lb-breathe 1.6s ease-in-out infinite; }
+.lb-ribbon.is-old { opacity: 0.72; }
+.lb-ribbon.is-new { animation: lb-ribbon-in 0.45s cubic-bezier(.2, 1.3, .4, 1); }
+/* After is-old on purpose: an emptied ribbon must stay hidden (playtest L1). The dice tray lives
+   in the hero bar now, so the ribbon stays readable while dice roll. */
+.lb-ribbon.is-empty { opacity: 0; transform: translate(-50%, -10px); }
+/* Instructions ("Tap ...") get a cyan edge, so they read differently from news. */
+.lb-ribbon.is-hint { border-color: rgba(116, 228, 255, 0.75); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 24px rgba(116, 228, 255, 0.25); }
+
+/* The dice tray docks in the hero bar, just below the hero cards (ui.js sets --tray-top), so it
+   never covers the board or the party bag: the hit plays out on the board and the tray explains
+   it alongside (ux #2). While it is up, the controls under it rest out of reach (.lb-dice-up). */
+.lb-tray {
+  --dz-size: clamp(68px, 10vh, 100px);
+  position: fixed;
+  top: var(--tray-top, 46vh);
+  right: 12px;
+  width: calc(var(--side) - 22px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-radius: 18px;
+  background: radial-gradient(ellipse at 30% 20%, rgba(58, 52, 136, 0.98), rgba(16, 14, 42, 0.98) 70%);
+  border: 2px solid rgba(244, 194, 90, 0.7);
+  box-shadow: 0 0 0 4px rgba(9, 8, 24, 0.7), 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 30px rgba(244, 194, 90, 0.18), inset 0 0 24px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(14px);
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s linear 0.25s;
+  pointer-events: none;
+  z-index: 3;
+}
+.lb-tray.dz-show { opacity: 1; visibility: visible; transform: none; transition: opacity 0.2s ease, transform 0.25s ease; }
+.lb-tray.is-small { --dz-size: clamp(64px, 9.5vh, 90px); }
+.lb-dice-up .lb-side .lb-turn, .lb-dice-up .lb-side .lb-actions, .lb-dice-up .lb-side .lb-endturn { visibility: hidden; }
+/* In the column each roll is a small stack: who rolls, the dice beside the sum, then the stamp. */
+@media (min-aspect-ratio: 155/100) {
+  .lb-tray .dz-roll { flex-wrap: wrap; gap: 4px 12px; }
+  .lb-tray .dz-info { display: contents; }
+  .lb-tray .dz-who { order: -1; flex: 1 0 100%; white-space: normal; line-height: 1.25; }
+  .lb-tray .dz-math { flex: 1 1 96px; flex-wrap: wrap; gap: 0 6px; }
+  .lb-tray .dz-line { flex: 1 1 100px; }
+  .lb-tray .dz-roll + .dz-roll { padding: 10px 0 0; border-left: 0; border-top: 2px solid rgba(244, 194, 90, 0.25); }
+}
+/* Three rolls at once (a Fireburst on three monsters): smaller dice and just the total. */
+.lb-tray.is-crowded .dz-small { width: calc(var(--dz-size) * 0.5); height: calc(var(--dz-size) * 0.5); }
+.lb-tray.is-crowded .dz-dmg .dz-math { display: none; }
+.lb-tray.is-crowded .dz-big { font-size: 24px; }
+
+/* ---------- 4:3 tablets: the HUD becomes a bottom dock ---------- */
+@media (max-aspect-ratio: 155/100) {
+  .lb-side {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: var(--dock);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto;
+    grid-template-areas: 'heroes heroes end' 'turn actions tools';
+    align-content: center;
+    gap: 8px 12px;
+    padding: 8px 12px 10px;
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(9, 8, 24, 0) 0, rgba(13, 11, 34, 0.9) 10px, #100e2a 30px);
+  }
+  .lb-roomname { display: none; }
+  /* The turn hint (with the round number) sits beside the action buttons (playtest L3, ux #4). */
+  .lb-turn { grid-area: turn; align-self: center; min-width: 0; padding: 4px 10px; font-size: 16px; line-height: 1.25;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .lb-turn-round { display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px; background: rgba(244, 194, 90, 0.2); color: var(--gold-2); font-weight: 700; }
+  .lb-turn.is-monsters .lb-turn-round { background: rgba(169, 133, 255, 0.25); color: #e3d2ff; }
+  /* The dice tray rolls over the bottom dock, in one row; the dock rests underneath. */
+  /* Centred with auto margins, not a transform, so a critical hit's shake doesn't throw it sideways. */
+  .lb-tray { top: auto; left: 8px; right: 8px; bottom: 7px; width: fit-content; max-width: calc(100vw - 16px); margin: 0 auto; height: calc(var(--dock) - 14px);
+    flex-direction: row; align-items: center; gap: 18px; padding: 8px 24px; transform: translateY(14px); --dz-size: calc(var(--dock) - 64px); }
+  .lb-tray.dz-show { transform: none; }
+  .lb-tray.is-small { --dz-size: calc(var(--dock) - 74px); }
+  .lb-dice-up .lb-side > :not(.lb-bag) { visibility: hidden; }
+  .lb-side-head { grid-area: tools; min-height: 0; justify-content: flex-end; }
+  .lb-heroes { grid-area: heroes; flex-direction: row; gap: 6px; min-width: 0; }
+  .lb-hero { flex: 1 1 0; min-width: 0; min-height: 60px; padding: 4px 6px 4px 4px; gap: 6px; }
+  .lb-hero.is-selected { transform: translateY(-3px); }
+  .lb-portrait { width: 46px; height: 46px; }
+  .lb-hero-name { font-size: 18px; }
+  .lb-hero-state { display: none; }
+  .lb-hp-text { font-size: 16px; min-width: 40px; }
+  .lb-hp-bar { display: none; }
+  .lb-endturn { grid-area: end; align-self: center; }
+  .lb-endturn .lb-btn { min-height: 58px; padding: 6px 18px; white-space: nowrap; }
+  .lb-pip-mini { width: 21px; height: 21px; }
+  .lb-bag { max-width: clamp(170px, calc(var(--bw) * 0.27), 300px); }
+  .lb-actions { grid-area: actions; display: flex; flex-wrap: nowrap; gap: 6px; justify-content: flex-end; }
+  .lb-actions .lb-btn { min-height: 50px; padding: 4px 11px; font-size: 17px; gap: 6px; flex: 0 1 auto; }
+  .lb-actions .lb-wide { flex: 0 1 auto; }
+  .lb-actions-empty { align-self: center; }
+  .lb-map { width: clamp(84px, calc(var(--bw) * 0.1), 120px); }
+  .lb-map.is-parchment { width: clamp(140px, calc(var(--bw) * 0.19), 250px); }
+  .lb-ribbon { max-width: calc(var(--bw) * 0.46); }
+}
+
+/* Short wide screens (1280x720): tighten the column a little. */
+@media (min-aspect-ratio: 155/100) and (max-height: 740px) {
+  .lb-side { gap: 7px; padding-top: 8px; padding-bottom: 8px; }
+  .lb-hero { min-height: 60px; padding-top: 4px; padding-bottom: 4px; }
+  .lb-portrait { width: 48px; height: 48px; }
+  .lb-actions .lb-btn { min-height: 46px; }
+  .lb-turn { padding: 6px 9px; font-size: 16px; }
+}
+/* Big TVs: let everything breathe. */
+@media (min-height: 1000px) and (min-aspect-ratio: 155/100) {
+  html, body { font-size: 20px; }
+  .lb-hero { min-height: 84px; }
+  .lb-portrait { width: 62px; height: 62px; }
+  .lb-hero-name { font-size: 25px; }
+  .lb-actions .lb-btn { min-height: 58px; font-size: 20px; }
+  .lb-item { width: 60px; height: 60px; }
+  .lb-roomname b { font-size: 25px; }
+  .lb-turn { font-size: 19px; }
+}
+
+/* ---------- Full-screen scenes ---------- */
+.lb-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--ink);
+  animation: lb-fade-in 0.5s ease both;
+}
+.lb-screen.is-leaving { animation: lb-fade-out 0.4s ease both; pointer-events: none; }
+.lb-bg { position: absolute; inset: -2%; background-size: cover; background-position: center; animation: lb-drift 40s ease-in-out infinite alternate; }
+.lb-bg.is-fallback { animation: none; }
+.lb-shade { position: absolute; inset: 0; pointer-events: none; }
+.lb-content { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 16px; width: min(1180px, calc(100vw - 32px)); max-height: 100vh; padding: 20px 0; }
+.lb-motes { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
+.lb-mote { position: absolute; bottom: -10px; width: 6px; height: 6px; border-radius: 50%; background: radial-gradient(circle, #fff6d0, rgba(244, 194, 90, 0.7) 45%, transparent 70%); animation: lb-rise linear infinite; }
+.lb-corner { position: absolute; top: 14px; right: 14px; z-index: 3; display: flex; gap: 8px; }
+
+/* Fallback paintings when the art isn't ready yet. */
+.lb-fb-title { background: radial-gradient(ellipse at 70% 75%, rgba(244, 194, 90, 0.35), transparent 45%), radial-gradient(ellipse at 50% 120%, #3a2a6e, transparent 60%), linear-gradient(180deg, #0d0b2a 0%, #1d1a4f 55%, #2a1f4d 100%); }
+.lb-fb-camp { background: radial-gradient(circle at 50% 72%, rgba(255, 170, 70, 0.75), rgba(240, 138, 60, 0.25) 22%, transparent 45%), linear-gradient(180deg, #120f2c, #24183a 70%, #3a2420); }
+.lb-fb-boss { background: radial-gradient(ellipse at 50% 45%, rgba(169, 133, 255, 0.35), transparent 50%), radial-gradient(ellipse at 50% 100%, #2a1550, transparent 60%), linear-gradient(180deg, #07061a, #160f33); }
+.lb-fb-victory { background: radial-gradient(circle at 50% 45%, rgba(255, 236, 170, 0.95), rgba(244, 194, 90, 0.6) 18%, rgba(240, 138, 60, 0.25) 38%, transparent 60%), linear-gradient(180deg, #2a2060, #4a3a7a 60%, #7a5a6a); }
+.lb-fb-sprite { position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); max-height: 62%; max-width: 70%; filter: drop-shadow(0 0 40px rgba(169, 133, 255, 0.55)); }
+
+/* Title */
+.lb-title .lb-shade { background: linear-gradient(180deg, rgba(9, 8, 24, 0.55) 0%, rgba(9, 8, 24, 0) 34%, rgba(9, 8, 24, 0) 62%, rgba(9, 8, 24, 0.55) 100%); }
+.lb-title .lb-content { justify-content: flex-start; height: 100%; padding-top: 5vh; }
+.lb-logo { text-align: center; }
+.lb-logo-word {
+  display: block;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: clamp(54px, 9vw, 132px);
+  line-height: 0.95;
+  letter-spacing: 0.04em;
+  background: linear-gradient(180deg, #fff7d6 0%, #ffe29a 35%, #f4b13f 62%, #c46f17 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 4px 0 #3a1f05) drop-shadow(0 0 26px rgba(255, 196, 90, 0.65));
+}
+.lb-logo-sub { display: block; margin-top: 10px; font-size: clamp(19px, 1.9vw, 28px); font-weight: 500; color: var(--cream); text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9); letter-spacing: 0.06em; }
+.lb-menu { display: flex; flex-direction: column; gap: 14px; width: min(380px, 80vw); margin-top: 3vh; }
+.lb-menu .lb-btn { width: 100%; justify-content: flex-start; padding-left: 22px; }
+
+/* Party */
+.lb-party .lb-bg { filter: blur(6px) brightness(0.45) saturate(0.9); }
+.lb-party .lb-shade { background: radial-gradient(ellipse at 50% 40%, rgba(16, 14, 42, 0.3), rgba(9, 8, 24, 0.85)); }
+.lb-party .lb-content { gap: 12px; }
+.lb-party-head { text-align: center; }
+.lb-party-head .lb-small { margin-top: 4px; font-size: 18px; }
+.lb-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; width: 100%; }
+.lb-card { display: flex; flex-direction: column; padding: 12px 12px 14px; gap: 8px; border-radius: 18px; min-width: 0; }
+.lb-card-art {
+  position: relative;
+  height: clamp(150px, 28vh, 300px);
+  border-radius: 12px;
+  background: radial-gradient(ellipse at 50% 80%, color-mix(in srgb, var(--hero, #4a7be0) 55%, transparent), transparent 70%), radial-gradient(ellipse at 50% 40%, #2c2768, #120f30 75%);
+  display: grid;
+  place-items: end center;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(244, 194, 90, 0.25);
+}
+/* A head-and-shoulders crop of the full sprite: bigger faces read better from the sofa. */
+.lb-card-art img { position: absolute; left: 0; top: 8px; width: 100%; height: calc(100% - 8px); object-fit: cover; object-position: 50% 0; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.55)); transition: transform 0.3s ease; }
+.lb-card:hover .lb-card-art img { transform: translateY(-4px) scale(1.02); }
+.lb-card-art .lb-ph-hero { width: 60%; height: 80%; margin-bottom: 6%; }
+.lb-card-name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.lb-card-name b { font-family: var(--font-head); font-weight: 600; font-size: 28px; color: var(--gold-2); line-height: 1; }
+.lb-card-name span { font-size: 16px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hero-light, var(--cyan)); }
+.lb-card-blurb { margin: 0; font-size: 17px; line-height: 1.32; color: var(--cream); min-height: 2.6em; }
+.lb-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.lb-stat { display: flex; align-items: center; gap: 5px; padding: 3px 6px; border-radius: 9px; background: rgba(0, 0, 0, 0.28); font-weight: 700; font-size: 17px; }
+.lb-stat .lb-ico { width: 20px; height: 20px; }
+.lb-stat.s-hearts .lb-ico { color: var(--heart); }
+.lb-stat.s-move .lb-ico { color: var(--green); }
+.lb-stat.s-defense .lb-ico { color: #a9c6ff; }
+.lb-stat.s-attack .lb-ico { color: #ffb08a; }
+.lb-stat.s-damage .lb-ico { color: var(--ember); }
+.lb-stat.s-range .lb-ico { color: var(--cyan); }
+.lb-card-ability { font-size: 16px; line-height: 1.3; color: var(--cream-dim); }
+.lb-card-ability b { color: #d8c4ff; }
+.lb-ab-short { display: none; }
+.lb-name-field { display: flex; flex-direction: column; gap: 4px; margin-top: auto; }
+.lb-name-field label { font-size: 16px; color: var(--muted); }
+.lb-name-field input {
+  min-height: 46px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 2px solid rgba(251, 240, 214, 0.22);
+  background: rgba(9, 8, 24, 0.6);
+  font-size: 18px;
+  color: var(--cream);
+  user-select: text;
+}
+.lb-name-field input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 12px rgba(244, 194, 90, 0.4); }
+.lb-name-field input::placeholder { color: rgba(217, 205, 178, 0.5); }
+.lb-party-foot { display: flex; gap: 14px; align-items: center; justify-content: center; }
+.lb-calm-btn[aria-pressed='true'] { border-color: var(--cyan); color: #dff8ff; }
+.lb-calm-btn[aria-pressed='true'] .lb-ico { color: var(--cyan); }
+.lb-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; font-size: 16px; color: var(--cream-dim); }
+.lb-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.lb-legend .lb-ico { width: 18px; height: 18px; }
+
+/* Story: one painted panel per line, slowly pushing in toward what matters in it (the valley,
+   the Gloam's cave, the heroes) and cross-fading to the next; the line is a caption below. */
+.lb-story-stage { position: absolute; inset: 0; overflow: hidden; }
+.lb-story { cursor: pointer; } /* a tap on the picture moves on */
+.lb-story-caption, .lb-story .lb-corner { cursor: default; }
+.lb-story-panel { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transform: scale(1.01); transition: opacity 1.6s ease; }
+.lb-story-panel.k0 { transform-origin: 55% 38%; }
+.lb-story-panel.k1 { transform-origin: 84% 20%; }
+.lb-story-panel.k2 { transform-origin: 50% 30%; }
+.lb-story-panel.is-shown { animation: lb-push 22s cubic-bezier(.3, .1, .4, 1) both; }
+.lb-story-panel.is-on { opacity: 1; }
+.lb-story .lb-shade { background: linear-gradient(180deg, rgba(9, 8, 24, 0.4) 0%, rgba(9, 8, 24, 0) 15%, rgba(9, 8, 24, 0) 50%, rgba(9, 8, 24, 0.7) 72%, rgba(9, 8, 24, 0.94) 100%); }
+.lb-story .lb-content { justify-content: flex-end; height: 100%; padding: 0 0 4.5vh; }
+.lb-story-caption { width: min(1060px, calc(100vw - 48px)); display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; }
+.lb-story-line { margin: 0; min-height: 2.8em; font-size: clamp(23px, 2.45vw, 38px); font-weight: 500; line-height: 1.4; text-wrap: balance; color: var(--cream); text-shadow: 0 2px 3px rgba(0, 0, 0, 0.95), 0 0 22px rgba(9, 8, 24, 0.9); opacity: 0; }
+.lb-story-line.is-in { animation: lb-caption-in 0.9s ease 0.2s both; }
+/* A gold first letter in the reading font: the pixel capital read like "[)eep" (playtest L8). */
+.lb-story-line::first-letter { color: var(--gold-2); font-weight: 700; font-size: 1.15em; }
+.lb-story-bar { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px 16px; }
+.lb-story-dots { display: inline-flex; gap: 9px; margin-right: 4px; }
+.lb-story-dots i { width: 13px; height: 13px; border-radius: 50%; background: rgba(251, 240, 214, 0.22); box-shadow: inset 0 0 0 1.5px rgba(244, 194, 90, 0.6); transition: background 0.4s ease, box-shadow 0.4s ease; }
+.lb-story-dots i.is-on { background: var(--gold); box-shadow: 0 0 10px rgba(244, 194, 90, 0.85); }
+/* Skip sits apart from Next, at the far left, so a quick tap on Next never skips the story (ux notes). */
+.lb-story-skip { order: -1; margin-right: 18px; min-height: 48px; padding: 6px 16px; font-size: 17px; }
+.lb-story-skip .lb-ico { width: 20px; height: 20px; }
+.lb-story-next .lb-ico { order: 2; }
+.lb-story-go { animation: lb-breathe 2s ease-in-out infinite; }
+.lb-row { display: flex; gap: 14px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.lb-row.is-split { justify-content: space-between; }
+
+/* How to Play */
+.lb-howto .lb-bg { filter: blur(8px) brightness(0.35); }
+.lb-howto.is-map .lb-bg { filter: blur(1.5px) brightness(0.55) saturate(0.9); }
+.lb-howto.is-map .lb-shade { background: radial-gradient(ellipse at 50% 50%, rgba(9, 8, 24, 0.55) 30%, rgba(9, 8, 24, 0.15) 75%); }
+.lb-howto-box { width: min(1100px, calc(100vw - 32px)); padding: 22px 26px 20px; display: flex; flex-direction: column; gap: 14px; }
+.lb-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.lb-step { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 12px 14px; border-radius: 14px; background: rgba(9, 8, 24, 0.45); border: 1px solid rgba(244, 194, 90, 0.22); text-align: center; }
+.lb-step-pic { position: relative; width: 100%; height: clamp(84px, 15vh, 150px); display: flex; align-items: center; justify-content: center; border-radius: 10px; background: radial-gradient(ellipse at 50% 70%, rgba(244, 194, 90, 0.18), transparent 70%); }
+.lb-step-pic img, .lb-step-pic .lb-ph { height: clamp(70px, 13vh, 132px); width: auto; max-width: 40%; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.6)); }
+.lb-step-pic .lb-ph { width: clamp(50px, 8vh, 90px); }
+.lb-step-pic .lb-pic-row { display: flex; align-items: flex-end; justify-content: center; gap: 10px; height: 100%; }
+.lb-step-pic .lb-pic-row img { max-width: 34%; }
+.lb-step-pic .dz-svg { width: clamp(70px, 11vh, 110px); height: auto; }
+.lb-step-num { position: absolute; top: 6px; left: 6px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: #241504; font-family: var(--font-body); font-weight: 700; }
+.lb-step p { margin: 0; font-size: 18px; line-height: 1.32; }
+.lb-tile { width: 54px; height: 54px; border-radius: 8px; border: 3px solid var(--gold); background: rgba(244, 194, 90, 0.18); box-shadow: 0 0 18px rgba(244, 194, 90, 0.6), inset 0 0 14px rgba(244, 194, 90, 0.4); }
+.lb-tile.is-target { border-color: #ff6b6b; background: rgba(255, 90, 90, 0.12); border-radius: 50%; box-shadow: 0 0 18px rgba(255, 90, 90, 0.6); }
+.lb-eyes { display: flex; gap: 10px; }
+.lb-eyes i { width: 14px; height: 9px; border-radius: 50%; background: #ffe36b; box-shadow: 0 0 10px #ffd23f; animation: lb-blink 3s infinite; }
+
+/* Settings and other centered modals */
+.lb-modal { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(6, 5, 18, 0.66); backdrop-filter: blur(3px); animation: lb-fade-in 0.25s ease both; }
+.lb-modal-box { width: min(560px, calc(100vw - 32px)); padding: 22px 26px; display: flex; flex-direction: column; gap: 14px; }
+.lb-setting { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 8px 0; border-bottom: 1px solid rgba(251, 240, 214, 0.1); }
+.lb-setting-label { display: flex; align-items: center; gap: 12px; font-size: 19px; font-weight: 600; }
+.lb-setting-label .lb-ico { color: var(--gold); width: 28px; height: 28px; }
+.lb-setting-label small { display: block; font-size: 16px; font-weight: 400; color: var(--muted); }
+.lb-switch { position: relative; width: 76px; height: 44px; flex: none; border-radius: 999px; border: 2px solid rgba(251, 240, 214, 0.3); background: rgba(9, 8, 24, 0.7); cursor: pointer; transition: background 0.2s, border-color 0.2s; }
+.lb-switch::after { content: ''; position: absolute; top: 4px; left: 4px; width: 32px; height: 32px; border-radius: 50%; background: var(--cream-dim); transition: transform 0.2s ease, background 0.2s; }
+.lb-switch[aria-checked='true'] { background: linear-gradient(180deg, #f4c25a, #c98a2b); border-color: #ffe7a3; }
+.lb-switch[aria-checked='true']::after { transform: translateX(32px); background: #fff8e4; }
+.lb-seg { display: flex; border-radius: 12px; overflow: hidden; border: 2px solid rgba(244, 194, 90, 0.5); }
+.lb-seg button { min-height: 44px; min-width: 84px; padding: 4px 14px; border: 0; background: rgba(9, 8, 24, 0.6); font-weight: 600; font-size: 17px; cursor: pointer; }
+.lb-seg button[aria-pressed='true'] { background: linear-gradient(180deg, #ffe7a3, #e0a53c); color: #241504; }
+
+/* Board overlays: room intro banner and room cleared */
+.lb-over { position: fixed; left: var(--bx); top: var(--by); width: var(--bw); height: var(--bh); z-index: 15; display: grid; place-items: center; animation: lb-fade-in 0.35s ease both; }
+.lb-over.is-leaving { animation: lb-fade-out 0.35s ease both; pointer-events: none; }
+.lb-over-dim { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 50%, rgba(9, 8, 24, 0.35), rgba(9, 8, 24, 0.75)); }
+.lb-banner { position: relative; width: min(760px, calc(var(--bw) - 40px)); padding: 24px 32px 22px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; animation: lb-banner-in 0.6s cubic-bezier(.2, 1.2, .4, 1) both; }
+.lb-banner .lb-kicker { font-size: 16px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--cyan); }
+.lb-banner .lb-h1 { font-size: clamp(34px, calc(var(--bh) * 0.075), 60px); }
+.lb-banner .lb-p { font-size: clamp(19px, calc(var(--bh) * 0.032), 26px); max-width: 640px; }
+/* Room cleared: a slim panel anchored low, so the lit room blazes above it (ux #9). */
+.lb-cleared { place-items: end center; padding-bottom: 12px; }
+.lb-cleared .lb-over-dim { background: linear-gradient(180deg, rgba(9, 8, 24, 0) 0%, rgba(9, 8, 24, 0) 36%, rgba(9, 8, 24, 0.55) 70%, rgba(9, 8, 24, 0.78) 100%); }
+.lb-cleared-box { position: relative; width: auto; min-width: min(560px, calc(var(--bw) - 32px)); max-width: calc(var(--bw) - 32px); max-height: calc(var(--bh) - 24px); overflow: auto; padding: 14px 24px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; animation: lb-banner-in 0.6s cubic-bezier(.2, 1.2, .4, 1) both; }
+.lb-cleared-top { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 16px; }
+.lb-cleared-kicker { font-family: var(--font-head); font-weight: 600; font-size: 26px; color: var(--gold-2); text-shadow: 0 2px 0 #4b2b06, 0 0 16px rgba(244, 194, 90, 0.5); }
+.lb-loot { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.lb-loot-item { display: flex; align-items: center; gap: 6px; padding: 3px 12px 3px 4px; border-radius: 999px; background: rgba(9, 8, 24, 0.45); border: 1px solid rgba(244, 194, 90, 0.3); animation: lb-pop-in 0.5s cubic-bezier(.2, 1.4, .4, 1) both; }
+.lb-loot-item img, .lb-loot-item .lb-ph { width: 38px; height: 38px; object-fit: contain; filter: drop-shadow(0 0 8px rgba(244, 194, 90, 0.45)); }
+.lb-loot-item span { font-size: 16px; font-weight: 600; line-height: 1.2; }
+.lb-loot-none { color: var(--cream-dim); font-size: 17px; }
+.lb-cleared-way { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 14px 18px; }
+.lb-doors { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+.lb-door { flex-direction: column; min-width: 190px; min-height: 92px; gap: 4px; text-align: center; }
+.lb-door .lb-door-side { font-size: 16px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); display: inline-flex; align-items: center; gap: 6px; }
+.lb-door .lb-door-name { font-family: var(--font-head); font-size: 26px; color: var(--gold-2); }
+.lb-door.is-hot { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(116, 228, 255, 0.35), 0 0 20px rgba(116, 228, 255, 0.4); }
+/* With the map, the doors stack beside it. */
+.lb-cleared-box.has-map .lb-doors { flex-direction: column; gap: 10px; }
+.lb-cleared-box.has-map .lb-door { min-height: 76px; min-width: 250px; }
+.lb-fade { position: fixed; inset: 0; z-index: 60; background: #000; pointer-events: none; opacity: 0; transition: opacity 0.6s ease; }
+.lb-fade.is-on { opacity: 1; pointer-events: auto; }
+
+/* Camp */
+.lb-camp .lb-shade { background: linear-gradient(180deg, rgba(9, 8, 24, 0) 40%, rgba(9, 8, 24, 0.8) 100%); }
+.lb-camp .lb-content { justify-content: flex-end; height: 100%; padding-bottom: 6vh; }
+.lb-camp-box { width: min(720px, calc(100vw - 40px)); padding: 22px 30px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.lb-camp-fire { position: absolute; left: 50%; top: 52%; width: 34vmin; height: 34vmin; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle, rgba(255, 190, 90, 0.85), rgba(240, 120, 40, 0.35) 40%, transparent 70%); animation: lb-flicker 1.6s ease-in-out infinite alternate; }
+
+/* Boss reveal */
+.lb-boss { background: #000; }
+.lb-boss .lb-bg { animation: lb-boss-zoom 7s ease-out both; }
+.lb-boss .lb-shade { background: radial-gradient(ellipse at 50% 40%, transparent 25%, rgba(5, 3, 18, 0.7) 100%), linear-gradient(180deg, transparent 35%, rgba(5, 3, 18, 0.55) 60%, rgba(5, 3, 18, 0.7) 100%); }
+/* Thin bars and a smaller title, so the moth's face and the heroes at the front show (ux #16). */
+.lb-letterbox { position: absolute; left: 0; right: 0; height: 8vh; background: #000; z-index: 3; }
+.lb-letterbox.top { top: 0; animation: lb-bar-top 0.9s cubic-bezier(.3, .8, .3, 1) both; }
+.lb-letterbox.bottom { bottom: 0; animation: lb-bar-bottom 0.9s cubic-bezier(.3, .8, .3, 1) both; }
+.lb-boss .lb-content { justify-content: flex-end; height: 100%; padding-bottom: 10vh; gap: 12px; }
+.lb-boss-title { font-family: var(--font-head); font-weight: 700; text-align: center; font-size: clamp(36px, 4.8vw, 72px); line-height: 1; letter-spacing: 0.05em; color: #f3e6ff; text-shadow: 0 0 6px #fff, 0 0 26px rgba(169, 133, 255, 0.95), 0 0 60px rgba(120, 70, 255, 0.7), 0 4px 0 #2a0f55; animation: lb-title-card 1.4s cubic-bezier(.2, .9, .3, 1) 0.7s both; }
+.lb-boss-line { max-width: 820px; padding: 8px 20px; border-radius: 14px; background: rgba(8, 5, 25, 0.62); text-align: center; font-size: clamp(19px, 1.9vw, 26px); color: var(--cream); text-shadow: 0 2px 8px #000; animation: lb-fade-up 0.8s ease 1.6s both; }
+.lb-boss .lb-row { animation: lb-fade-up 0.8s ease 2.1s both; }
+.lb-boss.lb-rumble { animation: lb-fade-in 0.5s ease both, lb-rumble 0.12s linear 0.5s 10; }
+
+/* Victory */
+.lb-victory .lb-shade { background: linear-gradient(180deg, rgba(9, 8, 24, 0.35) 0%, rgba(9, 8, 24, 0) 30%, rgba(9, 8, 24, 0.25) 55%, rgba(9, 8, 24, 0.85) 100%); }
+.lb-victory .lb-content { justify-content: space-between; height: 100%; padding: 4vh 0 4vh; }
+.lb-victory-head { padding: 6px 40px 10px; border-radius: 40px; background: radial-gradient(ellipse at 50% 50%, rgba(9, 8, 24, 0.62), rgba(9, 8, 24, 0) 72%); }
+.lb-victory-title { font-family: var(--font-head); font-weight: 700; font-size: clamp(34px, 4.3vw, 76px); text-align: center; line-height: 1.02; background: linear-gradient(180deg, #fffbe6, #ffe29a 45%, #f4a93a); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 3px 0 #4a2a06) drop-shadow(0 0 24px rgba(255, 210, 110, 0.8)); animation: lb-title-card 1.2s cubic-bezier(.2, .9, .3, 1) both; }
+.lb-victory-text { max-width: 800px; text-align: center; font-size: clamp(19px, 1.8vw, 25px); text-shadow: 0 2px 8px #000; margin: 6px auto 0; }
+.lb-victory-box { width: min(980px, calc(100vw - 32px)); padding: 18px 22px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.lb-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; width: 100%; }
+.lb-tile-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 6px; border-radius: 14px; background: rgba(9, 8, 24, 0.5); border: 1px solid rgba(244, 194, 90, 0.3); animation: lb-pop-in 0.5s cubic-bezier(.2, 1.4, .4, 1) both; }
+.lb-tile-stat .lb-ico { width: 30px; height: 30px; color: var(--gold); }
+.lb-tile-stat b { font-family: var(--font-body); font-weight: 700; font-size: 34px; line-height: 1.05; color: var(--gold-2); }
+.lb-tile-stat span { font-size: 16px; color: var(--cream-dim); text-align: center; }
+.lb-heroes-row { display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; }
+.lb-hero-chip { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+.lb-hero-chip .lb-portrait { width: 46px; height: 46px; }
+.lb-hero-chip b { display: block; font-family: var(--font-head); font-size: 19px; color: var(--gold-2); line-height: 1; }
+.lb-hero-title { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 17px; font-weight: 600; color: var(--cream); }
+.lb-hero-title .lb-ico { width: 15px; height: 15px; color: var(--gold); }
+.lb-helps { font-size: 16px; color: var(--cream-dim); text-align: center; }
+
+/* ---------- Dice (dice.js) ---------- */
+.dz-roll { display: flex; align-items: center; gap: 16px; }
+.dz-roll + .dz-roll { padding-left: 18px; border-left: 2px solid rgba(244, 194, 90, 0.25); }
+.dz-slot { position: relative; width: var(--dz-size, 120px); height: var(--dz-size, 120px); flex: none; display: grid; place-items: center; }
+.dz-small { width: calc(var(--dz-size, 120px) * 0.72); height: calc(var(--dz-size, 120px) * 0.72); }
+.dz-many .dz-small { width: calc(var(--dz-size, 120px) * 0.48); height: calc(var(--dz-size, 120px) * 0.48); }
+.dz-row { display: flex; gap: 8px; align-items: center; }
+.dz-die { width: 100%; height: 100%; will-change: transform; }
+.dz-svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.55)); }
+.dz-outline { fill: var(--dz-b, #e0a53c); stroke: var(--dz-edge, #6b3f0c); stroke-width: 3; stroke-linejoin: round; }
+.dz-rim { fill: none; stroke: var(--dz-edge, #6b3f0c); stroke-width: 2.5; stroke-linejoin: round; }
+.dz-face { stroke: var(--dz-edge, #6b3f0c); stroke-width: 1.2; }
+.dz-svg polygon { stroke: rgba(80, 40, 6, 0.35); stroke-width: 0.8; stroke-linejoin: round; }
+.dz-num { font-family: var(--font-body); font-weight: 700; fill: var(--dz-ink, #3b2103); text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: var(--dz-num-edge, rgba(255, 250, 230, 0.7)); stroke-width: 1.2; }
+.dz-tiny { font-family: var(--font-head); font-size: 8px; fill: var(--dz-ink, #3b2103); opacity: 0.45; text-anchor: middle; dominant-baseline: middle; }
+.dz-burst { position: absolute; inset: -18%; border-radius: 50%; background: radial-gradient(circle, rgba(255, 240, 190, 0.95), rgba(244, 194, 90, 0.45) 40%, transparent 70%); opacity: 0; pointer-events: none; }
+.dz-settled.dz-glow-crit .dz-svg { filter: drop-shadow(0 0 14px rgba(255, 220, 120, 0.95)) drop-shadow(0 6px 6px rgba(0, 0, 0, 0.5)); }
+.dz-settled.dz-glow-miss .dz-svg { filter: grayscale(0.35) brightness(0.9) drop-shadow(0 6px 6px rgba(0, 0, 0, 0.55)); }
+.dz-spark { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle, #fff, #ffd76a 50%, transparent 70%); pointer-events: none; }
+
+/* Palettes: heroes roll lantern gold, monsters roll gloam violet, damage is ember, healing is mint. */
+.dz-hero { --dz-a: #fff6d8; --dz-b: #e3a63e; --dz-face-a: #fffbef; --dz-face-b: #f5cf78; --dz-edge: #6b3f0c; --dz-ink: #3b2103; --dz-shade: #3a1d05; }
+.dz-monster { --dz-a: #8f78e8; --dz-b: #3a2a85; --dz-face-a: #b6a4ff; --dz-face-b: #5b45b8; --dz-edge: #140c38; --dz-ink: #fff3d0; --dz-num-edge: rgba(20, 10, 50, 0.8); --dz-shade: #0a0620; }
+.dz-damage { --dz-a: #ffb08a; --dz-b: #d2452e; --dz-face-a: #ffd2b8; --dz-face-b: #e8653f; --dz-edge: #5a1208; --dz-ink: #3a0a03; --dz-shade: #2a0602; }
+.dz-heal { --dz-a: #c9ffe0; --dz-b: #3fb57a; --dz-face-a: #eafff3; --dz-face-b: #7fe0a8; --dz-edge: #0d4a2a; --dz-ink: #0b3a20; --dz-shade: #04210f; }
+.dz-damage.dz-monster { --dz-a: #b48cf0; --dz-b: #7a2f8e; --dz-face-a: #e0c4ff; --dz-face-b: #a352b8; --dz-edge: #2a0838; --dz-ink: #fff3e0; --dz-num-edge: rgba(40, 8, 50, 0.8); }
+
+.dz-info { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.dz-who { font-size: clamp(16px, calc(var(--dz-size, 120px) * 0.15), 22px); font-weight: 600; color: var(--cream); white-space: nowrap; }
+.dz-math { display: flex; align-items: baseline; gap: 8px; flex-wrap: nowrap; font-size: clamp(20px, calc(var(--dz-size, 120px) * 0.2), 34px); font-weight: 700; color: var(--cream); white-space: nowrap; }
+.dz-plus { color: var(--muted); }
+.dz-lit { color: var(--gold-2); font-size: 0.82em; text-shadow: 0 0 10px rgba(244, 194, 90, 0.7); }
+.dz-total { font-size: 1.35em; font-weight: 800; color: #fff; }
+.dz-vs { color: var(--cream-dim); font-size: 0.82em; font-weight: 600; }
+.dz-stamp, .dz-big { font-family: var(--font-head); font-weight: 700; line-height: 1; opacity: 0; transform-origin: 30% 60%; white-space: nowrap; }
+.dz-stamp { font-size: clamp(34px, calc(var(--dz-size, 120px) * 0.4), 72px); padding: 2px 14px 4px; margin-top: 2px; border-radius: 12px; border: 3px solid currentColor; transform: rotate(-6deg); }
+.dz-hit { color: #ffd76a; background: rgba(60, 30, 4, 0.55); text-shadow: 0 0 16px rgba(255, 200, 90, 0.8); }
+.dz-crit { color: #fff3b0; background: linear-gradient(180deg, rgba(200, 120, 20, 0.6), rgba(80, 40, 4, 0.6)); text-shadow: 0 0 10px #fff, 0 0 26px rgba(255, 200, 80, 1); box-shadow: 0 0 30px rgba(255, 200, 80, 0.6); }
+.dz-miss { color: #b9c3ef; background: rgba(20, 24, 60, 0.55); }
+.dz-big { font-family: var(--font-body); font-weight: 800; font-size: clamp(28px, calc(var(--dz-size, 120px) * 0.3), 56px); color: #ffb08a; text-shadow: 0 0 16px rgba(240, 120, 60, 0.7); }
+.dz-heal .dz-big { color: var(--green); text-shadow: 0 0 16px rgba(120, 230, 160, 0.7); }
+.dz-line { font-size: clamp(16px, calc(var(--dz-size, 120px) * 0.14), 22px); color: var(--cream); font-style: italic; max-width: 360px; white-space: normal; }
+.dz-line:empty { display: none; }
+.dz-monster .dz-who { color: #c9b8ff; }
+
+/* ---------- Placeholders for art that hasn't arrived ---------- */
+.lb-ph { display: grid; place-items: center; border-radius: 12px; background: radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.2) 70%), var(--ph, #3a3488); color: #fff; font-family: var(--font-head); font-weight: 700; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18); }
+.lb-ph .lb-ico { width: 55%; height: 55%; color: rgba(255, 255, 255, 0.9); }
+.lb-ph-hero { border-radius: 50% 50% 18px 18px; font-size: 64px; }
+
+/* ---------- Motion ---------- */
+@keyframes lb-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lb-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes lb-fade-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes lb-line-in { to { opacity: 1; transform: none; } }
+@keyframes lb-caption-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes lb-push { from { transform: scale(1.01); } to { transform: scale(1.16); } }
+@keyframes lb-drift { from { transform: scale(1.02) translate(0, 0); } to { transform: scale(1.08) translate(-1%, -1%); } }
+@keyframes lb-rise { 0% { transform: translateY(0) translateX(0); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 0.9; } 100% { transform: translateY(-105vh) translateX(30px); opacity: 0; } }
+@keyframes lb-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+@keyframes lb-breathe { 0%, 100% { box-shadow: 0 0 10px rgba(244, 194, 90, 0.4); } 50% { box-shadow: 0 0 20px rgba(244, 194, 90, 0.8); } }
+@keyframes lb-ring { 0% { transform: scale(0.8); opacity: 0.9; } 100% { transform: scale(1.9); opacity: 0; } }
+@keyframes lb-ribbon-in { from { opacity: 0; transform: translate(-50%, -14px) scale(0.96); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes lb-banner-in { from { opacity: 0; transform: translateY(24px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes lb-pop-in { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
+@keyframes lb-flicker { from { opacity: 0.7; transform: translate(-50%, -50%) scale(0.96); } to { opacity: 1; transform: translate(-50%, -50%) scale(1.04); } }
+@keyframes lb-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+@keyframes lb-bar-top { from { transform: translateY(-100%); } to { transform: none; } }
+@keyframes lb-bar-bottom { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes lb-boss-zoom { from { transform: scale(1.18); filter: brightness(0.2); } to { transform: scale(1.03); filter: brightness(1); } }
+@keyframes lb-title-card { from { opacity: 0; transform: scale(1.35); letter-spacing: 0.3em; filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes lb-rumble { 0% { transform: translate(0, 0); } 25% { transform: translate(-4px, 2px); } 50% { transform: translate(3px, -3px); } 75% { transform: translate(-2px, -2px); } 100% { transform: translate(0, 0); } }
+@keyframes lb-shake { 0% { transform: translate(0, 0); } 20% { transform: translate(-8px, 4px); } 40% { transform: translate(7px, -5px); } 60% { transform: translate(-5px, -3px); } 80% { transform: translate(4px, 3px); } 100% { transform: translate(0, 0); } }
+
+/* Reduced motion: keep fades, drop the shaking, drifting and tumbling. */
+.lb-calm *, .lb-calm *::before, .lb-calm *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.12s !important; }
+.lb-calm .lb-mote { display: none; }
+
+/* ---------- Smaller and squarer screens ---------- */
+@media (max-width: 1100px) {
+  .lb-cards { gap: 10px; }
+  .lb-card { padding: 10px; }
+  .lb-card-name b { font-size: 24px; }
+  .lb-card-blurb { font-size: 16px; }
+  .lb-stat { font-size: 16px; padding: 3px 4px; gap: 3px; }
+  .lb-steps { gap: 10px; }
+}
+@media (max-height: 800px) {
+  .lb-card-art { height: clamp(130px, 20vh, 220px); }
+  /* Short screens show each ability's short line, so nobody has to guess what it does (ux #6). */
+  .lb-card-ability { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 1.25; }
+  .lb-ab-long { display: none; }
+  .lb-ab-short { display: inline; }
+  .lb-story .lb-content { padding-bottom: 3.5vh; }
+  .lb-story-caption { gap: 10px; }
+  .lb-howto-box { padding: 16px 20px; gap: 10px; }
+  .lb-step p { font-size: 17px; }
+  .lb-victory-box { padding: 14px 18px; gap: 10px; }
+  .lb-tile-stat b { font-size: 30px; }
+}
+@media (max-height: 740px) {
+  .lb-party .lb-content { gap: 8px; padding: 10px 0; }
+  .lb-card { gap: 6px; }
+  .lb-card-art { height: 22vh; }
+  .lb-legend { display: none; }
+}
+
+/* ---------- Phones and foldables (a Pixel Fold's inner screen is about 840x700) ---------- */
+/* The hero cards and How to Play scroll instead of cutting off their buttons. */
+.lb-party .lb-content, .lb-howto .lb-content { max-height: 100%; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; }
+/* Short screens only, so the panel's corner gems stay whole everywhere else. */
+@media (max-height: 640px) {
+  .lb-modal-box { max-height: calc(100% - 24px); overflow-y: auto; scrollbar-width: thin; }
+}
+.lb-party-foot { flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .lb-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lb-steps { grid-template-columns: minmax(0, 1fr); }
+  /* Clear of the sound and settings buttons in the corner. */
+  .lb-party-head { padding: 0 96px; }
+  .lb-party-head .lb-h1 { font-size: 32px; }
+}
+/* A narrow bottom dock takes three rows: the heroes, their actions, then the hint and end turn. */
+@media (max-aspect-ratio: 155/100) and (max-width: 900px) {
+  :root { --dock: clamp(200px, calc(100vh - 66.667vw), 270px); }
+  .lb-side {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto auto;
+    grid-template-areas: 'heroes heroes heroes' 'actions actions actions' 'turn end tools';
+    overflow-y: auto;
+  }
+  .lb-actions { flex-wrap: wrap; justify-content: center; }
+  .lb-endturn .lb-btn { min-height: 50px; }
+}
+
+/* =====================================================================================
+   Polish pass (2026-10-29): living paintings, transitions and celebrations.
+   Presentation only. Calm motion (.lb-calm) keeps everything still; see the end of the file.
+   ===================================================================================== */
+
+/* ---------- Living paintings ---------- */
+/* A layer lined up with a 16:9 painting shown as background-size: cover in .lb-bg's 104% box
+   (ui.js artLayer): glows, eyes and rays sit on exact spots of the picture. It gets the same
+   zoom animation as the painting beside it, so the two never drift apart. */
+.lb-art { position: absolute; inset: -2%; pointer-events: none; animation: lb-drift 40s ease-in-out infinite alternate; }
+.lb-art-box { position: absolute; left: 50%; top: 50%; width: max(100%, calc(104vh * 16 / 9)); aspect-ratio: 16 / 9; transform: translate(-50%, -50%); }
+.lb-art-box > * { position: absolute; transform: translate(-50%, -50%); }
+
+/* A lantern's warm halo, flickering softly over the painted flame. */
+.lb-lamp {
+  width: var(--s, 6%);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  mix-blend-mode: screen;
+  background: radial-gradient(circle, rgba(255, 240, 190, 0.85) 0, rgba(255, 196, 96, 0.42) 20%, rgba(255, 150, 60, 0.14) 44%, rgba(255, 140, 50, 0) 68%);
+  animation: lb-lamp 3.2s ease-in-out var(--dl, 0s) infinite alternate;
+}
+.lb-lamp.is-cyan { background: radial-gradient(circle, rgba(225, 255, 255, 0.9) 0, rgba(116, 228, 255, 0.5) 20%, rgba(80, 170, 255, 0.16) 44%, rgba(80, 170, 255, 0) 68%); animation-duration: 2.4s; }
+.lb-lamp.is-violet { background: radial-gradient(circle, rgba(214, 170, 255, 0.55) 0, rgba(150, 80, 255, 0.3) 28%, rgba(120, 60, 230, 0.1) 50%, rgba(120, 60, 230, 0) 70%); animation: lb-gloam 6s ease-in-out infinite alternate; }
+.lb-lamp.is-moon { background: radial-gradient(circle, rgba(230, 236, 255, 0.5) 0, rgba(170, 190, 255, 0.22) 26%, rgba(150, 170, 255, 0) 66%); animation: lb-gloam 9s ease-in-out infinite alternate; }
+.lb-lamp.is-fire { background: radial-gradient(ellipse 60% 50% at 50% 55%, rgba(255, 220, 140, 0.75) 0, rgba(255, 150, 60, 0.36) 34%, rgba(240, 100, 30, 0) 72%); animation: lb-fire 0.9s ease-in-out infinite alternate; }
+@keyframes lb-lamp {
+  0% { opacity: 0.55; transform: translate(-50%, -50%) scale(0.92); }
+  35% { opacity: 0.95; }
+  50% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+}
+@keyframes lb-gloam { from { opacity: 0.45; transform: translate(-50%, -50%) scale(0.94); } to { opacity: 1; transform: translate(-50%, -50%) scale(1.06); } }
+@keyframes lb-fire { from { opacity: 0.7; transform: translate(-50%, -50%) scale(0.96, 0.92); } to { opacity: 1; transform: translate(-50%, -50%) scale(1.04, 1.08); } }
+
+/* Fireflies wander slow loops and blink (ui.js fireflies). */
+.lb-fireflies { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+.lb-firefly {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fffdf0 0 24%, rgba(255, 228, 140, 0.95) 40%, rgba(255, 190, 80, 0) 74%);
+  box-shadow: 0 0 10px 3px rgba(255, 200, 90, 0.42);
+  scale: var(--fs, 1);
+  animation: lb-ff-path var(--d, 14s) ease-in-out var(--dl, 0s) infinite alternate, lb-ff-blink var(--b, 3s) ease-in-out var(--bl, 0s) infinite;
+}
+@keyframes lb-ff-path {
+  0% { transform: translate(0, 0); }
+  33% { transform: translate(var(--x1), var(--y1)); }
+  66% { transform: translate(var(--x2), var(--y2)); }
+  100% { transform: translate(var(--x3), var(--y3)); }
+}
+@keyframes lb-ff-blink { 0%, 100% { opacity: 0.1; } 30% { opacity: 1; } 52% { opacity: 0.5; } 70% { opacity: 0.95; } }
+
+/* Moonlight drifting down from the top left. */
+.lb-beams { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; mix-blend-mode: screen; }
+.lb-beams i {
+  position: absolute;
+  top: -25%;
+  left: var(--x, 10%);
+  width: var(--w, 12vw);
+  height: 150%;
+  background: linear-gradient(90deg, rgba(150, 170, 255, 0), rgba(176, 196, 255, 0.11) 50%, rgba(150, 170, 255, 0));
+  transform-origin: 50% 0;
+  animation: lb-beam var(--d, 11s) ease-in-out var(--dl, 0s) infinite alternate;
+}
+@keyframes lb-beam { from { opacity: 0.3; transform: rotate(-31deg) translateX(-1.5vw); } to { opacity: 1; transform: rotate(-25deg) translateX(1.5vw); } }
+
+/* Twinkling stars pinned to the painting (Gloamwing's wings). */
+.lb-twinkle {
+  width: calc(var(--ts, 1) * 1.3%);
+  aspect-ratio: 1;
+  mix-blend-mode: screen;
+  background: radial-gradient(circle, #ffffff 0 9%, rgba(210, 236, 255, 0.85) 16%, rgba(160, 200, 255, 0.25) 34%, rgba(160, 200, 255, 0) 60%);
+  opacity: 0;
+  animation: lb-twinkle var(--d, 3s) ease-in-out var(--dl, 0s) infinite;
+}
+@keyframes lb-twinkle {
+  0%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(0.3) rotate(0deg); }
+  45% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(45deg); }
+  60% { opacity: 0.85; }
+}
+
+/* ---------- Title: the painting comes alive ---------- */
+/* The camera starts close and dark and settles back as the scene brightens, then slowly pushes
+   in toward the dwarf gate for as long as the family sits on the title. */
+.lb-title .lb-bg:not(.is-fallback), .lb-title .lb-art { transform-origin: 66% 56%; animation: lb-title-zoom 2.8s cubic-bezier(.16, .7, .2, 1) both, lb-title-push 46s ease-in-out 2.8s infinite alternate; }
+.lb-title .lb-bg:not(.is-fallback) { animation: lb-title-zoom 2.8s cubic-bezier(.16, .7, .2, 1) both, lb-title-push 46s ease-in-out 2.8s infinite alternate, lb-title-dawn 1.6s ease-out both; }
+.lb-title .lb-art-box { animation: lb-fade-in 1.2s ease 0.7s both; }
+@keyframes lb-title-zoom { from { transform: scale(1.12); } to { transform: scale(1); } }
+@keyframes lb-title-push { from { transform: scale(1); } to { transform: scale(1.075); } }
+@keyframes lb-title-dawn { from { filter: brightness(0.18) saturate(0.6); } to { filter: none; } }
+.lb-title .lb-fireflies { animation: lb-fade-in 2s ease 1.2s both; }
+.lb-title .lb-beams { animation: lb-fade-in 3s ease 0.6s both; }
+/* The logo drops in and settles, a halo breathes behind it, and a shine sweeps the letters. */
+.lb-title .lb-logo { position: relative; z-index: 0; animation: lb-logo-in 1.3s cubic-bezier(.2, .8, .2, 1) 0.25s both; }
+.lb-title .lb-logo::before { content: ''; position: absolute; left: 50%; top: 36%; width: 92%; height: 150%; transform: translate(-50%, -50%); z-index: -1; pointer-events: none; background: radial-gradient(ellipse at center, rgba(255, 196, 96, 0.34), rgba(255, 170, 70, 0.1) 45%, rgba(255, 170, 70, 0) 70%); animation: lb-halo 5s ease-in-out 1.5s infinite alternate; }
+.lb-title .lb-logo-word {
+  background-image: linear-gradient(100deg, rgba(255, 255, 255, 0) 41%, rgba(255, 255, 255, 0.9) 50%, rgba(255, 255, 255, 0) 59%), linear-gradient(180deg, #fff7d6 0%, #ffe29a 35%, #f4b13f 62%, #c46f17 100%);
+  background-size: 260% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-position: 100% 0, 0 0;
+  animation: lb-logo-shine 7.5s ease-in-out 1.8s infinite;
+}
+@keyframes lb-logo-in { from { opacity: 0; transform: translateY(-22px) scale(0.93); } to { opacity: 1; transform: none; } }
+@keyframes lb-logo-shine { 0% { background-position: 100% 0, 0 0; } 24%, 100% { background-position: 0% 0, 0 0; } }
+@keyframes lb-halo { from { opacity: 0.55; transform: translate(-50%, -50%) scale(0.96); } to { opacity: 1; transform: translate(-50%, -50%) scale(1.05); } }
+.lb-title .lb-logo-sub { animation: lb-fade-up 0.7s ease 0.55s both; }
+.lb-title .lb-menu { animation: lb-fade-up 0.5s cubic-bezier(.2, .8, .2, 1) 0.6s both; }
+.lb-title .lb-corner { animation: lb-fade-in 0.5s ease 0.8s both; }
+
+/* A screen being replaced stays solid under the new one until it is covered (ui.js setScreen). */
+.lb-screen.is-under { pointer-events: none; }
+
+/* ---------- Party: the heroes step up one by one ---------- */
+.lb-party .lb-card { animation: lb-card-in 0.6s cubic-bezier(.2, .9, .3, 1.15) both; }
+.lb-party .lb-card:nth-child(2) { animation-delay: 0.08s; }
+.lb-party .lb-card:nth-child(3) { animation-delay: 0.16s; }
+.lb-party .lb-card:nth-child(4) { animation-delay: 0.24s; }
+.lb-party .lb-party-head { animation: lb-fade-up 0.6s ease both; }
+.lb-party .lb-party-foot, .lb-party .lb-legend { animation: lb-fade-up 0.6s ease 0.3s both; }
+@keyframes lb-card-in { from { opacity: 0; transform: translateY(28px) scale(0.97); } to { opacity: 1; transform: none; } }
+
+/* ---------- Story: "Into the Deep!" dives into the dark ---------- */
+/* The picture rushes closer and sinks into black while the caption fades, then the whole screen
+   melts away over the first room (ui.js adds is-diving; leave() waits for it). */
+.lb-story.is-diving, .lb-story.is-diving.is-leaving { animation: lb-dive-out 1.1s ease-in both; pointer-events: none; }
+.lb-story.is-diving .lb-story-stage { transform-origin: 50% 46%; animation: lb-dive-zoom 1.1s cubic-bezier(.55, 0, .8, .35) both; }
+.lb-story.is-diving .lb-content, .lb-story.is-diving .lb-corner { animation: lb-fade-out 0.35s ease both; }
+@keyframes lb-dive-out { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes lb-dive-zoom { from { transform: none; filter: none; } to { transform: scale(1.45); filter: brightness(0.04); } }
+
+/* ---------- Between rooms: the lantern iris ---------- */
+/* The light closes into a warm-rimmed circle around the party, then opens again in the next
+   room where the party stands. --iris is the circle's radius (registered in ui.js, so it can be
+   animated); without that the game uses the plain fade. */
+.lb-iris {
+  --iris: var(--iris-open, 170vmax);
+  position: fixed;
+  inset: 0;
+  z-index: 61;
+  pointer-events: none;
+  visibility: hidden;
+  background: radial-gradient(circle at var(--ix, 50%) var(--iy, 62%), rgba(2, 3, 8, 0) calc(var(--iris) - 120px), rgba(255, 176, 80, 0.16) calc(var(--iris) - 70px), rgba(2, 3, 8, 0.78) calc(var(--iris) - 26px), #020308 var(--iris));
+  transition: --iris 0.85s cubic-bezier(.45, 0, .7, 1);
+}
+.lb-iris.is-active { visibility: visible; }
+.lb-iris.is-on { --iris: 0px; pointer-events: auto; }
+.lb-iris.is-opening { transition: --iris 1s cubic-bezier(.25, .1, .3, 1); }
+.lb-iris.is-snap { transition: none; }
+
+/* ---------- Victory: the golden light ---------- */
+/* It blooms out of the Heart Lantern (--fx, --fy) until the screen glows, then melts away over
+   the victory painting (ui.js flareIn, flareOut). A warm glow, never a white flash. */
+/* A soft disc of light whose radius (--glow, registered in ui.js) grows from the lantern. */
+.lb-flare {
+  --glow: 0px;
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  background: radial-gradient(circle at var(--fx, 50%) var(--fy, 35%), #fffcef 0, #fff0c2 calc(var(--glow) * 0.16), #ffd98a calc(var(--glow) * 0.4), rgba(245, 178, 76, 0.85) calc(var(--glow) * 0.72), rgba(240, 160, 60, 0) var(--glow));
+  transition: --glow 0.6s ease, opacity 0.3s ease, visibility 0s linear 0.6s;
+}
+.lb-flare.is-on { visibility: visible; opacity: 1; --glow: var(--glow-max, 240vmax); transition: --glow 1.05s cubic-bezier(.4, 0, .75, .5), opacity 0.25s ease; }
+.lb-flare.is-off { visibility: visible; opacity: 0; --glow: var(--glow-max, 240vmax); transition: opacity 1.6s cubic-bezier(.25, .6, .3, 1); }
+.lb-flare.is-snap { transition: none; }
+
+/* ---------- Room cleared: the cheer ---------- */
+/* A big golden "Room cleared!" bursts over the back of the room with slowly turning rays and a
+   spray of sparks, holds, then floats up and away by itself (ui.js cheer). */
+.lb-cheer { position: fixed; left: var(--bx); top: var(--by); width: var(--bw); height: var(--bh); z-index: 14; pointer-events: none; overflow: hidden; display: grid; justify-items: center; align-content: start; padding-top: calc(var(--bh) * 0.19); transition: opacity 0.35s ease; }
+.lb-cheer.is-leaving { opacity: 0; }
+/* The ribbon steps aside while the cheer says it all. */
+.lb-cheering .lb-hud .lb-ribbon { opacity: 0; transform: translate(-50%, -10px); animation: none; }
+.lb-cheer-in { position: relative; z-index: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; animation: lb-cheer 3.4s cubic-bezier(.2, .8, .25, 1) both; }
+/* A soft dusk behind the words, so the gold reads against the brightest floor. */
+.lb-cheer-in::before { content: ''; position: absolute; left: 50%; top: 48%; width: 150%; height: 190%; transform: translate(-50%, -50%); z-index: -1; border-radius: 50%; background: radial-gradient(closest-side, rgba(12, 9, 30, 0.62), rgba(12, 9, 30, 0.38) 55%, rgba(12, 9, 30, 0) 100%); }
+.lb-cheer-rays {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: calc(var(--bw) * 0.8);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  z-index: -2;
+  mix-blend-mode: screen;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 226, 150, 0) 0deg 6deg, rgba(255, 226, 150, 0.42) 9deg, rgba(255, 226, 150, 0) 12deg 18deg);
+  -webkit-mask: radial-gradient(circle, #000 6%, rgba(0, 0, 0, 0.55) 26%, rgba(0, 0, 0, 0) 60%);
+  mask: radial-gradient(circle, #000 6%, rgba(0, 0, 0, 0.55) 26%, rgba(0, 0, 0, 0) 60%);
+  transform: translate(-50%, -50%);
+  animation: lb-rays-spin 18s linear infinite, lb-rays-glow 3.4s ease both;
+}
+.lb-cheer-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: clamp(48px, calc(var(--bh) * 0.13), 118px);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-align: center;
+  white-space: nowrap;
+  background-image: linear-gradient(100deg, rgba(255, 255, 255, 0) 41%, rgba(255, 255, 255, 0.95) 50%, rgba(255, 255, 255, 0) 59%), linear-gradient(180deg, #fff1b0 0%, #ffd66e 38%, #f2a83a 66%, #c26a12 100%);
+  background-size: 260% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-position: 100% 0, 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* A dark rim all round (four hard shadows), then the warm glow. */
+  filter: drop-shadow(0 4px 0 #3a1c03) drop-shadow(0 -2px 0 #3a1c03) drop-shadow(2px 0 0 #3a1c03) drop-shadow(-2px 0 0 #3a1c03) drop-shadow(0 0 20px rgba(255, 190, 80, 0.75));
+  animation: lb-logo-shine 2.6s ease-in-out 0.5s both;
+}
+.lb-cheer-line { padding: 4px 18px; border-radius: 999px; background: rgba(9, 8, 24, 0.55); font-size: clamp(19px, calc(var(--bh) * 0.034), 30px); font-weight: 600; color: var(--cream); text-shadow: 0 2px 3px rgba(0, 0, 0, 0.9); animation: lb-fade-up 0.7s ease 0.45s both; }
+.lb-cheer-spark { position: absolute; left: 50%; top: 45%; width: 12px; height: 12px; margin: -6px; border-radius: 50%; background: radial-gradient(circle, #fff 0 20%, #ffe08a 42%, rgba(255, 200, 90, 0) 72%); opacity: 0; animation: lb-spark-fly 1.3s cubic-bezier(.1, .75, .3, 1) var(--dl, 0.2s) both; }
+@keyframes lb-cheer {
+  0% { opacity: 0; transform: scale(0.5); }
+  13% { opacity: 1; transform: scale(1.08); }
+  21% { transform: scale(1); }
+  82% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-30px) scale(0.97); }
+}
+@keyframes lb-rays-spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+@keyframes lb-rays-glow { 0% { opacity: 0; } 18% { opacity: 1; } 75% { opacity: 0.85; } 100% { opacity: 0; } }
+@keyframes lb-spark-fly {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  12% { opacity: 1; }
+  70% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.9); }
+}
+
+/* ---------- Boss reveal: eyes in the dark first ---------- */
+/* 0.3 s: two eyes open in the black and blink. 0.8 s: the chamber rises out of the dark as the
+   camera settles. 1.4 s: a soft violet flash and a rumble land the name. 2-2.7 s: the epithet,
+   the line and the button. Afterwards the moth hovers, breathing, its wings twinkling. */
+.lb-boss .lb-bg:not(.is-fallback), .lb-boss .lb-art { transform-origin: 52% 34%; animation: lb-boss-near 3.4s cubic-bezier(.2, .7, .25, 1) both, lb-boss-hover 5s ease-in-out 3.4s infinite alternate; }
+.lb-boss .lb-bg:not(.is-fallback) { animation: lb-boss-near 3.4s cubic-bezier(.2, .7, .25, 1) both, lb-boss-hover 5s ease-in-out 3.4s infinite alternate, lb-boss-wake 3.2s ease-in both; }
+@keyframes lb-boss-near { from { transform: scale(1.2); } to { transform: scale(1.03); } }
+@keyframes lb-boss-hover { from { transform: scale(1.03); } to { transform: scale(1.055) translateY(-0.4%); } }
+@keyframes lb-boss-wake { 0%, 24% { filter: brightness(0); } 50% { filter: brightness(0.4) saturate(0.8); } 100% { filter: none; } }
+.lb-boss-eye {
+  width: 3.4%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  mix-blend-mode: screen;
+  background: radial-gradient(circle, #fff8dc 0 12%, rgba(255, 214, 120, 0.95) 24%, rgba(200, 140, 255, 0.55) 46%, rgba(150, 90, 255, 0) 72%);
+  opacity: 0;
+  animation: lb-boss-eyes 3.4s ease both, lb-boss-blink 5s ease-in-out 3.4s infinite;
+}
+@keyframes lb-boss-eyes {
+  0%, 8% { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  24% { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+  31% { transform: translate(-50%, -50%) scale(1.3, 0.12); }
+  37% { transform: translate(-50%, -50%) scale(1.25); }
+  62% { opacity: 1; }
+  100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes lb-boss-blink { 0%, 90%, 100% { transform: translate(-50%, -50%) scale(1); } 94% { transform: translate(-50%, -50%) scale(1, 0.12); } }
+.lb-boss .lb-art-box .lb-lamp { animation-delay: 1.2s; }
+.lb-boss-flash { position: absolute; inset: 0; z-index: 1; pointer-events: none; mix-blend-mode: screen; opacity: 0; background: radial-gradient(ellipse at 52% 32%, rgba(236, 222, 255, 0.85), rgba(160, 110, 255, 0.4) 34%, rgba(90, 40, 200, 0) 72%); animation: lb-boss-flash 1.1s ease-out 1.35s both; }
+@keyframes lb-boss-flash { 0% { opacity: 0; } 14% { opacity: 0.5; } 100% { opacity: 0; } }
+.lb-boss.lb-rumble { animation: lb-fade-in 0.5s ease both, lb-rumble 0.12s linear 1.4s 6; }
+.lb-motes.is-violet .lb-mote { background: radial-gradient(circle, #f3e8ff, rgba(176, 130, 255, 0.7) 45%, rgba(176, 130, 255, 0) 70%); }
+/* The name is the big card; "The Lantern-Eater" sits under it, small and gold, so the moth's
+   face and its stolen lantern stay in view above the words. */
+.lb-boss-title { display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: inherit; text-shadow: none; animation: none; }
+.lb-boss-name {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: clamp(54px, 7.2vw, 118px);
+  line-height: 0.92;
+  letter-spacing: 0.07em;
+  margin-right: -0.07em;
+  color: #f6edff;
+  text-shadow: 0 0 6px #fff, 0 0 26px rgba(169, 133, 255, 0.95), 0 0 64px rgba(120, 70, 255, 0.7), 0 5px 0 #2a0f55;
+  animation: lb-title-card 1.2s cubic-bezier(.2, .9, .3, 1) 1.4s both;
+}
+.lb-boss-epithet { display: flex; align-items: center; gap: 16px; font-family: var(--font-head); font-weight: 600; font-size: clamp(20px, 2.1vw, 34px); line-height: 1.1; letter-spacing: 0.3em; text-transform: uppercase; color: var(--gold-2); text-shadow: 0 2px 0 #2a0f55, 0 0 16px rgba(244, 194, 90, 0.55); animation: lb-epithet 1s ease 2s both; }
+.lb-boss-epithet::before, .lb-boss-epithet::after { content: ''; width: clamp(36px, 6vw, 120px); height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(244, 194, 90, 0), var(--gold)); }
+.lb-boss-epithet::after { margin-left: -0.3em; transform: scaleX(-1); } /* balances the trailing letter-spacing */
+@keyframes lb-epithet { from { opacity: 0; letter-spacing: 0.6em; } to { opacity: 1; letter-spacing: 0.3em; } }
+.lb-boss-line { animation: lb-fade-up 0.8s ease 2.35s both; }
+.lb-boss .lb-row { animation: lb-fade-up 0.8s ease 2.7s both; }
+
+/* ---------- Victory: a beauty shot, then the celebration ---------- */
+.lb-victory .lb-bg:not(.is-fallback), .lb-victory .lb-art { transform-origin: 50% 40%; animation: lb-victory-settle 4.5s cubic-bezier(.2, .7, .25, 1) both, lb-drift 40s ease-in-out 4.5s infinite alternate; }
+@keyframes lb-victory-settle { from { transform: scale(1.14); } to { transform: scale(1.02); } }
+/* Light rays turning slowly behind the Heart Lantern. */
+.lb-rays {
+  width: 110%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  mix-blend-mode: screen;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 232, 160, 0) 0deg 5deg, rgba(255, 232, 160, 0.3) 8deg, rgba(255, 232, 160, 0) 11deg 16deg);
+  -webkit-mask: radial-gradient(circle, rgba(0, 0, 0, 0.9) 3%, rgba(0, 0, 0, 0.45) 20%, rgba(0, 0, 0, 0) 46%);
+  mask: radial-gradient(circle, rgba(0, 0, 0, 0.9) 3%, rgba(0, 0, 0, 0.45) 20%, rgba(0, 0, 0, 0) 46%);
+  animation: lb-rays-turn 80s linear infinite, lb-rays-in 2.4s ease 0.3s both;
+}
+@keyframes lb-rays-turn { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+@keyframes lb-rays-in { from { opacity: 0; } to { opacity: 0.7; } }
+/* Gentle bursts of golden sparks in the dawn sky (ui.js sparkBursts). */
+.lb-bursts { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+.lb-burst { position: absolute; width: 0; height: 0; }
+.lb-burst::before { content: ''; position: absolute; width: 44px; height: 44px; margin: -22px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 250, 225, 0.9), rgba(255, 220, 140, 0) 70%); opacity: 0; animation: lb-burst-core 6.4s ease-out var(--dl, 0s) infinite; }
+.lb-burst i { position: absolute; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: radial-gradient(circle, #fff 0 22%, #ffe9a6 44%, rgba(255, 210, 110, 0) 72%); box-shadow: 0 0 8px 2px rgba(255, 210, 110, 0.5); opacity: 0; animation: lb-burst-spark 6.4s cubic-bezier(.12, .7, .3, 1) var(--dl, 0s) infinite; }
+.lb-burst.is-warm i { background: radial-gradient(circle, #fff 0 22%, #ffc58a 44%, rgba(255, 150, 80, 0) 72%); box-shadow: 0 0 8px 2px rgba(255, 160, 90, 0.5); }
+@keyframes lb-burst-core { 0% { opacity: 0; transform: scale(0.3); } 2% { opacity: 1; } 11% { opacity: 0; transform: scale(1.7); } 100% { opacity: 0; transform: scale(1.7); } }
+@keyframes lb-burst-spark {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.3); }
+  2% { opacity: 1; }
+  16% { opacity: 0.9; transform: translate(var(--dx), var(--dy)) scale(1); }
+  27%, 100% { opacity: 0; transform: translate(calc(var(--dx) * 1.1), calc(var(--dy) * 1.1 + 28px)) scale(0.5); }
+}
+/* The title fits on one line on a TV (it used to leave "again!" on its own), keeps its outline
+   after it lands, and catches a shine now and then. */
+.lb-victory .lb-content { width: min(1500px, calc(100vw - 32px)); }
+.lb-victory-title {
+  font-size: clamp(34px, 4.3vw, 72px);
+  text-wrap: balance;
+  background-image: linear-gradient(100deg, rgba(255, 255, 255, 0) 41%, rgba(255, 255, 255, 0.9) 50%, rgba(255, 255, 255, 0) 59%), linear-gradient(180deg, #fffbe6, #ffe29a 45%, #f4a93a);
+  background-size: 260% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-position: 100% 0, 0 0;
+  animation: lb-victory-title-in 1.2s cubic-bezier(.2, .9, .3, 1) 0.25s both, lb-logo-shine 6.5s ease-in-out 2.2s infinite;
+}
+@keyframes lb-victory-title-in {
+  from { opacity: 0; transform: scale(1.3); letter-spacing: 0.2em; filter: blur(6px) drop-shadow(0 3px 0 #4a2a06); }
+  to { opacity: 1; transform: none; letter-spacing: normal; filter: drop-shadow(0 3px 0 #4a2a06) drop-shadow(0 0 24px rgba(255, 210, 110, 0.8)); }
+}
+/* The line under the title gets its own soft backing: it sits on the brightest part of the sky. */
+.lb-victory-text { display: table; margin: 10px auto 0; padding: 6px 24px 7px; border-radius: 24px; background: rgba(9, 8, 24, 0.6); box-shadow: 0 0 24px 10px rgba(9, 8, 24, 0.35); animation: lb-fade-up 0.8s ease 0.8s both; }
+.lb-victory-head { background: none; }
+/* The panel rises after the beauty shot; the numbers count up (ui.js) and each hero's title pops in. */
+.lb-victory-box { animation: lb-rise-in 0.9s cubic-bezier(.2, .85, .25, 1) 1.3s both; }
+@keyframes lb-rise-in { from { opacity: 0; transform: translateY(70px); } to { opacity: 1; transform: none; } }
+.lb-victory .lb-tile-stat { animation-delay: calc(1.5s + var(--i, 0) * 0.1s); }
+.lb-tile-stat b { font-variant-numeric: tabular-nums; }
+.lb-tile-stat b.is-done { animation: lb-num-pop 0.4s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes lb-num-pop { 50% { transform: scale(1.28); color: #fff; } }
+.lb-victory .lb-hero-chip { animation: lb-pop-in 0.55s cubic-bezier(.2, 1.4, .4, 1) calc(1.95s + var(--i, 0) * 0.14s) both; }
+.lb-victory .lb-helps, .lb-victory .lb-victory-box .lb-row { animation: lb-fade-up 0.6s ease 2.1s both; }
+
+/* ---------- Camp ---------- */
+.lb-camp .lb-art-box { animation: lb-fade-in 1.6s ease 0.3s both; }
+
+/* ---------- Room intro banner: a little more ceremony ---------- */
+.lb-banner .lb-kicker { display: inline-flex; align-items: center; gap: 12px; }
+.lb-banner .lb-kicker::before, .lb-banner .lb-kicker::after { content: ''; width: 36px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(116, 228, 255, 0), rgba(116, 228, 255, 0.8)); }
+.lb-banner .lb-kicker::after { margin-left: -0.18em; transform: scaleX(-1); }
+.lb-banner .lb-h1 { animation: lb-fade-up 0.6s ease 0.15s both; }
+.lb-banner .lb-p { animation: lb-fade-up 0.6s ease 0.3s both; }
+.lb-banner .lb-row { animation: lb-fade-up 0.6s ease 0.45s both; }
+
+/* ---------- Dice drama (dice.js) ---------- */
+/* The sum reads in steps: the bonus, the light bonus, then "= 27" counting up, then "needs 11"
+   on its own line, so "= 27" never breaks away from its number. */
+.dz-math .dz-sum { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.dz-total.is-final { display: inline-block; animation: dz-total-pop 0.32s cubic-bezier(.3, 1.7, .5, 1); }
+@keyframes dz-total-pop { 50% { transform: scale(1.35); color: #fff6c8; text-shadow: 0 0 14px rgba(255, 220, 120, 0.9); } }
+@media (min-aspect-ratio: 155/100) {
+  .lb-tray .dz-math .dz-vs { flex-basis: 100%; }
+  .lb-tray .dz-big { transform-origin: 0 60%; } /* grows to the right, never back over the dice */
+  /* An empty stamp used to share the sum's line until HIT! arrived, squeezing "= 27" onto a line of
+     its own and then jumping back: it takes no room until it has its word. */
+  .lb-tray .dz-stamp:empty { display: none; }
+}
+/* A natural 20: golden rays spin up behind the die and the tray's rim flares. */
+.dz-die { position: relative; z-index: 1; }
+.dz-rays { position: absolute; inset: -62%; pointer-events: none; }
+.dz-rays i {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 230, 150, 0) 0deg 8deg, rgba(255, 230, 150, 0.75) 12deg, rgba(255, 230, 150, 0) 16deg 24deg);
+  -webkit-mask: radial-gradient(circle, #000 16%, rgba(0, 0, 0, 0.5) 34%, rgba(0, 0, 0, 0) 64%);
+  mask: radial-gradient(circle, #000 16%, rgba(0, 0, 0, 0.5) 34%, rgba(0, 0, 0, 0) 64%);
+  animation: dz-rays-spin 6s linear infinite;
+}
+.dz-monster .dz-rays i { background: repeating-conic-gradient(from 0deg, rgba(200, 160, 255, 0) 0deg 8deg, rgba(200, 160, 255, 0.6) 12deg, rgba(200, 160, 255, 0) 16deg 24deg); }
+@keyframes dz-rays-spin { to { transform: rotate(360deg); } }
+.lb-tray.dz-crit-flash { animation: dz-tray-flash 1.2s ease-out; }
+@keyframes dz-tray-flash {
+  0% { border-color: #fff3c4; box-shadow: 0 0 0 4px rgba(9, 8, 24, 0.7), 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 0 0 rgba(255, 214, 120, 0); }
+  18% { border-color: #fff3c4; box-shadow: 0 0 0 4px rgba(9, 8, 24, 0.7), 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 48px 10px rgba(255, 214, 120, 0.7); }
+}
+/* A monster's critical is the monsters' violet, so the party's own gold stays special. */
+.dz-monster .dz-stamp.dz-crit { color: #f3e8ff; background: linear-gradient(180deg, rgba(120, 70, 210, 0.6), rgba(40, 20, 90, 0.6)); text-shadow: 0 0 10px #fff, 0 0 26px rgba(180, 130, 255, 1); box-shadow: 0 0 30px rgba(170, 120, 255, 0.55); }
+
+/* ---------- Calm motion: everything above holds still ---------- */
+.lb-calm .lb-firefly, .lb-calm .lb-beams, .lb-calm .lb-cheer-rays, .lb-calm .lb-cheer-spark, .lb-calm .lb-boss-flash, .lb-calm .lb-bursts, .lb-calm .dz-rays { display: none; }
+.lb-calm .lb-cheer-in, .lb-calm .lb-story.is-diving, .lb-calm .lb-story.is-diving .lb-story-stage { animation: none; }
+/* Calm motion squeezes every animation to an instant, so a slow push-in that starts late would
+   jump at its start: these paintings (and the glows pinned to them) simply hold still. */
+.lb-calm .lb-title .lb-bg, .lb-calm .lb-title .lb-art, .lb-calm .lb-boss .lb-bg, .lb-calm .lb-boss .lb-art,
+.lb-calm .lb-victory .lb-bg, .lb-calm .lb-victory .lb-art { animation: none; }
+.lb-calm .lb-victory-box, .lb-calm .lb-victory .lb-hero-chip, .lb-calm .lb-victory .lb-tile-stat, .lb-calm .lb-victory .lb-row, .lb-calm .lb-victory .lb-helps,
+.lb-calm .lb-boss-name, .lb-calm .lb-boss-epithet, .lb-calm .lb-boss-line, .lb-calm .lb-boss .lb-row { animation-delay: 0s; }

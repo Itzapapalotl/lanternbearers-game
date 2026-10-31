@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lanternbearers</title>
+  <meta name="description" content="A family co-op dungeon crawl: relight the Deep Lanterns of Gloamhold.">
+  <meta name="theme-color" content="#0b0a1f">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Pixelify+Sans:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app" class="lb-app">
+    <!-- The board fills the biggest 3:2 area; style.css places it, render.js draws it. -->
+    <div id="board-wrap" class="lb-board-wrap">
+      <canvas id="board" class="lb-board" aria-label="The dungeon room"></canvas>
+    </div>
+    <!-- Every screen, the HUD and the dice tray live in here (ui.js). -->
+    <div id="ui-root" class="lb-ui-root"></div>
+  </div>
+  <noscript><p class="lb-noscript">Lanternbearers needs JavaScript turned on to play.</p></noscript>
+
+  <!-- Classic scripts, in ARCHITECTURE.md order, so the game runs from file:// -->
+  <script src="layout.js"></script>
+  <script src="data.js"></script>
+  <script src="art-manifest.js"></script>
+  <script src="rules.js"></script>
+  <script src="fx.js"></script>
+  <script src="render.js"></script>
+  <script src="dice.js"></script>
+  <script src="audio.js"></script>
+  <script src="ui.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
