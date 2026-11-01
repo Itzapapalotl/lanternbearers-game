@@ -1792,6 +1792,24 @@
       }
       return null;
     }
+    // Layout checks use the same painted geometry as the canvas, including off-square art.
+    function boardBounds() {
+      const squares = [];
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const b = L.cellRect(c, r);
+        squares.push({ c, r, ...screenBox({ x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h }) });
+      }
+      const figures = [...S.units.values()].map((u) => {
+        const points = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => spot(u, x, y));
+        return { uid: u.uid, kind: u.kind, ...screenBox({ x0: Math.min(...points.map((p) => p.x)),
+          x1: Math.max(...points.map((p) => p.x)), y0: Math.min(...points.map((p) => p.y)), y1: Math.max(...points.map((p) => p.y)) }) };
+      });
+      const props = [...S.props.values()].map((p) => {
+        const sp = propSprite(p), x = p.x + p.shake;
+        return { uid: p.uid, ...screenBox({ x0: x - sp.w / 2, x1: x + sp.w / 2, y0: p.y - sp.h, y1: p.y }) };
+      });
+      return { squares, figures, props };
+    }
     function hpBar(u, avoid) {
       const boss = u.boss;
       const w = boss ? 220 : 76;
@@ -4224,7 +4242,7 @@
         return { fps: Math.round(S.fps || 0), frameMs: Math.round((S.cost || 0) * 100) / 100, particles: parts.list.length,
           units: S.units.size, props: S.props.size,
           playing: S.playing, time: Math.round(clock.now), errored: !!S.errored,
-          hover: S.hover, bossLabel: screenBox(bossLabelBox()), bossFigure: bossFigureScreen() };
+          hover: S.hover, bossLabel: screenBox(bossLabelBox()), bossFigure: bossFigureScreen(), bounds: boardBounds() };
       },
       destroy() {
         S.destroyed = true;

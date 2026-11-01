@@ -381,12 +381,15 @@ img { -webkit-user-drag: none; }
 .lb-actions-empty { grid-column: 1 / -1; font-size: 16px; color: var(--muted); text-align: center; padding: 4px; }
 
 /* Party bag */
-/* On wide screens the bag hangs on the board's back wall, top right, opposite the map. */
+/* The original back-wall panel. Scroll sideways within at most two rows; on shorter
+   paintings one row leaves room for the heading and instructions above the floor. */
 .lb-bag {
+  --bag-item: 46px;
+  --bag-rows: 1;
   position: fixed;
   top: calc(var(--by) + 8px);
   right: calc(var(--side) + var(--bx) + 8px);
-  max-width: clamp(170px, calc(var(--bw) * 0.25), 320px);
+  width: clamp(170px, calc(var(--bw) * 0.25), 320px);
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -401,11 +404,26 @@ img { -webkit-user-drag: none; }
 .lb-bag-head { display: flex; align-items: center; justify-content: space-between; }
 .lb-gold { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 19px; color: var(--gold-2); }
 .lb-gold .lb-coin { width: 24px; height: 24px; }
-.lb-bag-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.lb-bag-items {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--bag-rows), var(--bag-item));
+  grid-auto-columns: var(--bag-item);
+  gap: 6px;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 3px 20px 5px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gold-deep) var(--night);
+  /* A clipped next column and a soft edge cue scrolling even on touchscreens. */
+  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+}
+.lb-bag-items:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .lb-item {
   position: relative;
-  width: 46px;
-  height: 46px;
+  width: var(--bag-item);
+  height: var(--bag-item);
   padding: 3px;
   border-radius: 12px;
   border: 2px solid rgba(251, 240, 214, 0.16);
@@ -432,7 +450,16 @@ img { -webkit-user-drag: none; }
 .lb-item.is-usable { cursor: pointer; border-color: var(--gold); box-shadow: 0 0 16px rgba(244, 194, 90, 0.55); animation: lb-breathe 2.4s ease-in-out infinite; }
 .lb-item.is-usable:hover { transform: translateY(-2px); }
 .lb-bag.is-empty .lb-bag-items, .lb-bag-tip:empty { display: none; }
-.lb-bag-tip { font-size: 16px; color: var(--gold-2); }
+.lb-bag-tip { font-size: 14px; line-height: 16px; color: var(--gold-2); }
+@media (max-aspect-ratio: 155/100) {
+  .lb-bag { --bag-item: 44px; width: clamp(170px, calc(var(--bw) * 0.27), 300px); gap: 2px; padding: 3px 8px; }
+  /* A few pixels of margin above the back row, which drifts with the boss room's camera. */
+  .lb-bag-items { padding-top: 2px; padding-bottom: 3px; }
+  .lb-bag-tip { font-size: 13px; line-height: 15px; }
+}
+@media (min-width: 1800px) and (min-height: 950px) and (min-aspect-ratio: 155/100) {
+  .lb-bag:has(.lb-item:nth-child(6)) { --bag-rows: 2; }
+}
 
 /* Dungeon map and message ribbon sit on the board's back wall, above the playable squares. */
 .lb-map {
@@ -499,7 +526,7 @@ img { -webkit-user-drag: none; }
   transition: opacity 0.35s ease, transform 0.35s ease;
 }
 .lb-busy .lb-side { pointer-events: none; }
-/* The bag hangs on the board, where a half-faded copy looked like a ghost over the painting:
+/* Keep the bag readable while the other controls rest:
    it stays crisp (the banner's own dim covers it). The ribbon steps aside for the banner. */
 .lb-busy .lb-side > :not(.lb-bag) { opacity: 0.5; transition: opacity 0.3s ease; }
 .lb-busy .lb-hud .lb-ribbon { opacity: 0; transform: translate(-50%, -10px); animation: none; }
@@ -611,7 +638,6 @@ img { -webkit-user-drag: none; }
   .lb-endturn { grid-area: end; align-self: center; }
   .lb-endturn .lb-btn { min-height: 58px; padding: 6px 18px; white-space: nowrap; }
   .lb-pip-mini { width: 21px; height: 21px; }
-  .lb-bag { max-width: clamp(170px, calc(var(--bw) * 0.27), 300px); }
   .lb-actions { grid-area: actions; display: flex; flex-wrap: nowrap; gap: 6px; justify-content: flex-end; }
   .lb-actions .lb-btn { min-height: 50px; padding: 4px 11px; font-size: 17px; gap: 6px; flex: 0 1 auto; }
   .lb-actions .lb-wide { flex: 0 1 auto; }
@@ -636,7 +662,7 @@ img { -webkit-user-drag: none; }
   .lb-portrait { width: 62px; height: 62px; }
   .lb-hero-name { font-size: 25px; }
   .lb-actions .lb-btn { min-height: 58px; font-size: 20px; }
-  .lb-item { width: 60px; height: 60px; }
+  .lb-bag { --bag-item: 60px; }
   .lb-roomname b { font-size: 25px; }
   .lb-turn { font-size: 19px; }
 }

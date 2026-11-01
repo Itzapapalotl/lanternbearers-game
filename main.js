@@ -1067,8 +1067,8 @@
     if (app.pending && sel) {
       const p = app.pending;
       if (p.confirm) {
-        // An armed ability: a tap inside its glow uses it. An armed treasure with one ringed
-        // friend (the Phoenix Feather): a tap on that friend uses it (ux-2 #3).
+        // An armed ability: a tap inside its glow uses it. An armed item with one ringed
+        // target also accepts a tap on that target.
         if (hasCell(p.show && p.show.area, at) || (p.target && uid === p.target)) {
           doAct(sel, actionFrom(p.action, p.target ? { target: p.target } : null));
           return;
@@ -1185,10 +1185,9 @@
     ui.hint(`${what} Tap ${name} again to use it!`);
   }
 
-  // Chapter 2's treasures (crystals, the Rainbow Cake, the Phoenix Feather) are used up in one go,
-  // so the first tap only says what they do; a second tap uses them, any other tap puts them away
-  // (ux-2 #3). Chapter 1's items keep their one-tap use, so Chapter 1 plays exactly as before.
-  const ARM_FIRST = { tint: 1, feast: 1, revive: 1 };
+  // Every bag item in both chapters needs a second tap. With nothing to aim at or just one
+  // target, explain and arm it first; otherwise choosing a glowing target is the second tap.
+  const ARM_FIRST = (a, aim) => !!a.item && (aim === 'none' || (aim === 'list' && targetsOf(a).length === 1));
   function armItem(sel, a, target) {
     const it = itemDef(a.item);
     app.pending = { action: a, kind: a.kind, item: a.item, area: false, aimAt: null, confirm: true, target: target || null };
@@ -1196,8 +1195,8 @@
     ui.hint(`${it.name}: ${it.text || ''} Tap it again to use it!`);
   }
 
-  // A button in the hero bar: actions with one possible target happen at once, others glow
-  // their targets and wait for a tap.
+  // Bag items always wait for confirmation or a target. Other actions with one possible
+  // target happen at once.
   function chooseAction(a) {
     const sel = app.selected;
     if (!a || !sel) return;
@@ -1214,7 +1213,7 @@
       return;
     }
     const only = aim === 'list' && targetsOf(a).length === 1 ? targetsOf(a)[0] : null;
-    if (a.item && ARM_FIRST[itemDef(a.item).kind] && (aim === 'none' || only)) {
+    if (ARM_FIRST(a, aim)) {
       armItem(sel, a, only);
       return;
     }
@@ -1561,12 +1560,20 @@
     const canvas = document.getElementById('board');
     board = root.LB_BOARD.create(canvas, { layout: root.LB_LAYOUT, data: DATA, art: root.LB_ART || {}, rules: R });
     ui = root.LB_UI.create(document.getElementById('ui-root'), handlers);
-    board.onCellTap(onCellTap);
+    let tappedCell = false;
+    board.onCellTap((t) => { tappedCell = true; onCellTap(t); });
     // The board reports taps but not what tapped, and aiming works differently on touch screens.
-    canvas.addEventListener('pointerdown', (e) => { app.lastPointer = e.pointerType || 'mouse'; }, true);
+    canvas.addEventListener('pointerdown', (e) => { tappedCell = false; app.lastPointer = e.pointerType || 'mouse'; }, true);
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && app.pending) cancelPending();
     });
+    // Board cells resolve their own targets (including touch area previews). A tap on the
+    // painted wall or elsewhere in the HUD puts the item away; only its own button confirms.
+    document.addEventListener('click', (e) => {
+      if (!app.pending || !app.pending.item || (e.target === canvas && tappedCell)) return;
+      const item = e.target.closest('[data-item]');
+      if (!item || item.dataset.item !== app.pending.item) cancelPending();
+    }, true);
     applySettings();
     if (params.get('fast') === '1' || params.get('fast') === '2') setFast(params.get('fast') === '2' ? 2 : true);
     if (params.get('reset') === '1') clearSave();

@@ -1029,7 +1029,7 @@
           <div class="lb-endturn"></div>
           <div class="lb-bag">
             <div class="lb-bag-head"><span class="lb-section-label lb-bag-title">Party bag</span><span class="lb-gold"></span></div>
-            <div class="lb-bag-items"></div>
+            <div class="lb-bag-items" tabindex="0" role="group" aria-label="Bag items; scroll sideways for more"></div>
             <div class="lb-bag-tip"></div>
           </div>
         </aside>
@@ -1274,14 +1274,14 @@
           title="${esc(it.name)}${it.text ? ': ' + esc(it.text) : ''}${esc(how)}"
           aria-label="${esc(it.name)}, ${counts[id]}${use ? ', tap to use' : ''}">${lootImg(id)}${counts[id] > 1 ? `<b class="lb-count">${counts[id]}</b>` : ''}</button>`;
       }).join('');
-      // An empty bag shows just its name and the gold: less clutter on the back wall (ux #14).
+      // An empty bag shows just its name and gold.
       return {
         items,
         empty: !order.length,
         // An armed treasure (ux-2 #3) waits for its second tap; an aimed item waits for a target.
-        tip: aimingId && ctx.armed ? `Tap the ${itemDef(aimingId).name} again to use it.`
-          : aimingId ? `Aiming the ${itemDef(aimingId).name}. Tap it again to put it away.`
-          : Object.keys(usable).length ? 'Tap a glowing item to use it.' : '',
+        tip: aimingId && ctx.armed ? 'Tap again to use. Tap elsewhere to put away.'
+          : aimingId ? 'Tap a target, or tap this item again to put it away.'
+          : Object.keys(usable).length ? 'Tap a glowing item to see what it does.' : '',
       };
     }
 
