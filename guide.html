@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lanternbearers Game Guide</title>
+<meta name="description" content="A free, calm co-op dungeon crawl for 1 to 4 players on one screen. Light the braziers, push back the dark, and help each other up. Plays in your browser.">
+<meta name="theme-color" content="#100e28">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Lanternbearers: a free family co-op dungeon crawl">
+<meta property="og:description" content="Four heroes, one lantern each, 1 to 4 players on one screen. Light the braziers, help friends up, and bring the colors back. Free in your browser.">
+<meta property="og:image" content="https://itzapapalotl.github.io/lanternbearers-game/art/screen-title.jpg">
+<meta property="og:url" content="https://itzapapalotl.github.io/lanternbearers-game/guide.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Lanternbearers: a free family co-op dungeon crawl">
+<meta name="twitter:description" content="Four heroes, one lantern each, 1 to 4 players on one screen. Free in your browser.">
+<meta name="twitter:image" content="https://itzapapalotl.github.io/lanternbearers-game/art/screen-title.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Pixelify+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --ink:#090818;--night:#100e28;--indigo:#1b1843;--indigo-2:#272260;--indigo-3:#3a3488;
+  --gold:#f4c25a;--gold-2:#ffe29a;--gold-deep:#b9771f;--ember:#f08a3c;--cream:#fbf0d6;--cream-dim:#d9cdb2;
+  --muted:#a9a3c9;--cyan:#74e4ff;--heart:#ff5d73;--green:#84e6a6;--violet:#a985ff;
+  --font-head:'Pixelify Sans','Trebuchet MS','Segoe UI',system-ui,sans-serif;
+  --font-body:'Lexend','Segoe UI',system-ui,-apple-system,sans-serif;
+  --radius:14px;--edge:rgba(244,194,90,.5);
+  --panel:linear-gradient(180deg,rgba(36,31,88,.97),rgba(17,15,46,.98));
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:radial-gradient(ellipse at 50% 0%,#1d1a4a 0%,var(--night) 45%,var(--ink) 100%) fixed;background-color:var(--night);color:var(--cream);font:17px/1.55 var(--font-body);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+img{max-width:100%;display:block}
+a{color:var(--gold-2)}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px}
+h1,h2,h3{font-family:var(--font-head);font-weight:600;line-height:1.15;margin:0;color:var(--gold-2)}
+h2{font-size:clamp(1.6rem,5vw,2.2rem);margin-bottom:6px}
+h3{font-size:1.2rem;color:var(--cream)}
+section{padding:34px 0 6px}
+.lede{color:var(--cream-dim);margin:0 0 18px}
+.hero{position:relative;min-height:min(78vh,560px);display:flex;align-items:flex-end;background:#090818 url(art/screen-title.jpg) center/cover no-repeat;border-bottom:2px solid var(--edge)}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(9,8,24,.15) 0%,rgba(9,8,24,.35) 45%,rgba(16,14,40,.96) 100%)}
+.hero .wrap{position:relative;z-index:1;padding-bottom:26px;padding-top:120px;width:100%}
+.hero h1{font-size:clamp(2.4rem,10vw,4.6rem);text-shadow:0 3px 18px rgba(0,0,0,.8),0 0 28px rgba(244,194,90,.4)}
+.pitch{font-size:clamp(1.05rem,3.6vw,1.35rem);max-width:34em;margin:8px 0 18px;text-shadow:0 2px 10px rgba(0,0,0,.9)}
+.btn{display:inline-block;font:700 1.2rem var(--font-body);text-decoration:none;color:#2a1700;background:linear-gradient(180deg,#ffe29a,#f4c25a 55%,#e09a2d);border:2px solid #fff1c4;border-radius:999px;padding:14px 38px;box-shadow:0 0 24px rgba(244,194,90,.45),0 4px 0 var(--gold-deep);transition:transform .12s}
+.btn:hover,.btn:focus-visible{transform:translateY(-2px)}
+.btn:active{transform:translateY(2px)}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding:0;list-style:none}
+.badges li{font-size:.85rem;background:rgba(16,14,40,.75);border:1px solid var(--edge);border-radius:999px;padding:3px 12px;color:var(--cream-dim)}
+.cta{text-align:center;padding:30px 0 10px}
+.steps{counter-reset:s;list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.steps li{counter-increment:s;position:relative;background:var(--panel);border:1px solid var(--edge);border-radius:var(--radius);padding:14px 16px 14px 62px}
+.steps li::before{content:counter(s);position:absolute;left:14px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;background:var(--gold);color:#2a1700;font:700 1.3rem var(--font-head);display:grid;place-items:center}
+.steps b{color:var(--gold-2)}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.big{grid-template-columns:1fr}
+.card{background:var(--panel);border:1px solid var(--edge);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;align-items:center;text-align:center;min-width:0}
+.card img{height:112px;width:auto;object-fit:contain;margin-bottom:8px;filter:drop-shadow(0 4px 8px rgba(0,0,0,.6))}
+.card .role{font-size:.78rem;color:var(--gold);letter-spacing:.04em;text-transform:uppercase;margin:2px 0 6px}
+.card p{margin:0;font-size:.88rem;line-height:1.45;color:var(--cream-dim)}
+.card p b{color:var(--cream)}
+.stats{font-size:.8rem;color:var(--muted);margin-top:6px}
+.card.boss{border-color:var(--gold)}
+.card.boss img{height:170px}
+.sub{margin:26px 0 10px;font-size:1.35rem}
+.tips{margin:0;padding:0;list-style:none;display:grid;gap:10px}
+.tips li{background:var(--panel);border-left:4px solid var(--gold);border-radius:10px;padding:12px 14px}
+.tips b{color:var(--gold-2)}
+.shots{display:grid;gap:18px}
+figure{margin:0}
+figure img{width:100%;height:auto;border-radius:var(--radius);border:2px solid var(--edge);box-shadow:0 8px 30px rgba(0,0,0,.5);background:var(--indigo)}
+figcaption{font-size:.9rem;color:var(--cream-dim);margin-top:6px}
+.panel{background:var(--panel);border:1px solid var(--edge);border-radius:var(--radius);padding:16px}
+.panel ul{margin:8px 0 0;padding-left:1.2em}
+.shop{display:flex;gap:14px;align-items:center}
+.shop img{width:96px;height:auto;flex:none}
+.shop p{margin:0}
+.two{display:grid;gap:14px}
+footer{padding:36px 0 44px;text-align:center;color:var(--muted);font-size:.85rem}
+@media (min-width:640px){
+  .grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .grid.big{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .shots{grid-template-columns:repeat(2,1fr)}
+  .two{grid-template-columns:1fr 1fr}
+}
+@media (min-width:900px){
+  body{font-size:18px}
+  .grid.heroes,.grid.mons{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .steps{grid-template-columns:1fr 1fr}
+  .card img{height:130px}
+  .card.boss img{height:200px}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.btn{transition:none}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>Lanternbearers</h1>
+    <p class="pitch">Four small heroes, one lantern each, and a dark that needs pushing back. A calm, turn-based dungeon crawl for 1 to 4 players on one screen.</p>
+    <a class="btn" href="./">Play now, it's free</a>
+    <ul class="badges"><li>Free</li><li>Nothing to install</li><li>Phone, tablet or laptop</li><li>Saves in your browser</li></ul>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section id="how">
+  <h2>How to play in 4 steps</h2>
+  <p class="lede">Easy enough to read aloud. There are no timers, so nobody ever has to hurry.</p>
+  <ol class="steps">
+    <li><b>Meet your party.</b> All four heroes go on every adventure. Each player can take a hero and write their name on its card, or one person can run the whole party.</li>
+    <li><b>Tap a hero, then tap a glowing square.</b> That's how you move. Everything is one tap at a time.</li>
+    <li><b>Light the braziers and defeat the monsters.</b> Stand next to a brazier to light it. Then attack, or use a special ability. When the room is bright and the monsters are gone, you move on.</li>
+    <li><b>Help each other.</b> If a hero is knocked down, a friend standing next to them can help them up. Nobody gets left behind.</li>
+  </ol>
+  <div class="cta"><a class="btn" href="./">Play Lanternbearers</a></div>
+</section>
+
+<section id="cast">
+  <h2>Who you play and what you face</h2>
+  <p class="lede">Hearts are how much a hero can take. Each special ability can be used once per room.</p>
+
+  <h3 class="sub">The four Lanternbearers</h3>
+  <div class="grid heroes">
+    <article class="card"><img loading="lazy" src="guide/hero-knight.png" alt="Rowan the Knight in blue armor holding a big shield" width="160" height="160"><h3>Rowan</h3><div class="role">Knight</div><p>A brave knight who keeps her friends safe. <b>Shield Wall:</b> +2 Defense, and monsters must hit her instead of friends beside her.</p><div class="stats">14 hearts</div></article>
+    <article class="card"><img loading="lazy" src="guide/hero-ranger.png" alt="Fennick the Ranger in green with a bow" width="160" height="160"><h3>Fennick</h3><div class="role">Ranger</div><p>A sharp-eyed archer who can hit a target from across the room. <b>Twin Arrows:</b> shoot two arrows in one turn.</p><div class="stats">10 hearts, long range</div></article>
+    <article class="card"><img loading="lazy" src="guide/hero-wizard.png" alt="Juniper the Wizard in purple robes holding a glowing staff" width="160" height="160"><h3>Juniper</h3><div class="role">Wizard</div><p>A clever wizard with sparkly spells. <b>Fireburst:</b> a fireball that always hits every monster around the spot.</p><div class="stats">8 hearts, ranged</div></article>
+    <article class="card"><img loading="lazy" src="guide/hero-lightbringer.png" alt="Oren the Lightbringer in gold and white robes with a lantern staff" width="160" height="160"><h3>Oren</h3><div class="role">Lightbringer</div><p>A kind healer. <b>Mend</b> heals a friend every turn, and <b>Sunburst</b> heals everyone nearby and nudges monsters back.</p><div class="stats">11 hearts, healer</div></article>
+  </div>
+
+  <h3 class="sub">Monsters you'll meet</h3>
+  <div class="grid mons">
+    <article class="card"><img loading="lazy" src="guide/monster-gloomling.png" alt="A Gloomling, a little shadow imp" width="160" height="160"><h3>Gloomling</h3><div class="role">Chapter 1</div><p>A little shadow imp that dislikes bright light.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-rattlebones.png" alt="Rattlebones, a goofy skeleton guard" width="160" height="160"><h3>Rattlebones</h3><div class="role">Chapter 1</div><p>A goofy skeleton guard, sturdier than he looks.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-goblin.png" alt="A Lantern Goblin, a sneaky thief" width="160" height="160"><h3>Lantern Goblin</h3><div class="role">Chapter 1</div><p>A sneaky thief who blows out braziers when nobody is looking.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-sporecap.png" alt="A Sporecap, a walking mushroom" width="160" height="160"><h3>Sporecap</h3><div class="role">Chapter 1</div><p>A sleepy mushroom whose spores make heroes too drowsy to move.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-mimic.png" alt="A Mimic, a treasure chest with teeth" width="160" height="160"><h3>Mimic</h3><div class="role">Chapter 1</div><p>A treasure chest with teeth and a very big appetite.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-greyling.png" alt="A Greyling, a smudgy grey ink-blob gremlin" width="160" height="160"><h3>Greyling</h3><div class="role">Chapter 2</div><p>A smudgy gremlin that hides in the dark. Brazier light shows it.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-chillbat.png" alt="A Chillbat, a round fluffy ice-blue bat" width="160" height="160"><h3>Chillbat</h3><div class="role">Chapter 2</div><p>A fluffy ice-blue bat that gives a chilly nip and flutters away.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-frostcub.png" alt="A Frostcub, a chubby yeti cub in a scarf" width="160" height="160"><h3>Frostcub</h3><div class="role">Chapter 2</div><p>A chubby yeti cub in a scarf. Its snowballs knock heroes back a square.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-magma-blob.png" alt="A Magma Blob, a wobbly orange jelly" width="160" height="160"><h3>Magma Blob</h3><div class="role">Chapter 2</div><p>A wobbly lava jelly that pops into two little Blobbits.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-clanker.png" alt="A Clanker, a noisy brass forge robot" width="160" height="160"><h3>Clanker</h3><div class="role">Chapter 2</div><p>A noisy brass robot. Its armor makes every hit do 1 less.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-vine-snapper.png" alt="A Vine Snapper, a big rooted flower with a mouth" width="160" height="160"><h3>Vine Snapper</h3><div class="role">Chapter 2</div><p>A rooted flower that pulls heroes in from 3 squares away.</p></article>
+    <article class="card"><img loading="lazy" src="guide/monster-starwisp.png" alt="A Starwisp, a floating star spirit" width="160" height="160"><h3>Starwisp</h3><div class="role">Chapter 2</div><p>A floating star spirit that shoots twinkle bolts, then blinks away.</p></article>
+  </div>
+
+  <h3 class="sub">The two bosses</h3>
+  <div class="grid big">
+    <article class="card boss"><img loading="lazy" src="guide/boss-gloamwing.png" alt="Gloamwing, a giant shadow moth with starry wings" width="224" height="224"><h3>Gloamwing</h3><div class="role">Chapter 1: The Lantern-Eater</div><p>A giant shadow moth that gobbles up every bit of light it can find. It's meant to be a real challenge, so bring the whole party. 55 hearts.</p></article>
+    <article class="card boss"><img loading="lazy" src="guide/boss-color-dragon.png" alt="Pebblebelly, a chubby grey dragon with a rainbow belly" width="224" height="224"><h3>Pebblebelly</h3><div class="role">Chapter 2: The Color Gobbler</div><p>A huge, chubby grey dragon with a belly full of stolen rainbow flames. Watch which color it glows next: that's its next move. 46 hearts.</p></article>
+  </div>
+
+  <h3 class="sub">Nibbet's Lantern Shop</h3>
+  <div class="panel shop">
+    <img loading="lazy" src="guide/npc-shopkeeper.png" alt="Nibbet, the little shopkeeper" width="160" height="160">
+    <p>After every room you clear, Nibbet sets out three items. Spend the gold you've found on potions, charms and other shiny things for the party bag.</p>
+  </div>
+</section>
+
+<section id="tips">
+  <h2>Tips</h2>
+  <ul class="tips">
+    <li><b>Light the braziers first.</b> Stand next to one and use your action to light it. Bright light helps you hit (+2), and when every brazier is lit the whole party heals a little.</li>
+    <li><b>Help friends up.</b> A knocked-down hero isn't out. A friend standing next to them can help them back on their feet.</li>
+    <li><b>Abilities come back each room.</b> Each hero's special ability works once per room, so use it freely. Oren's Mend is free every turn.</li>
+    <li><b>Chapter 2's colored flames do things.</b> Green light heals 1 heart at the start of your turn, blue slows monsters, red adds damage, and violet boosts Defense.</li>
+    <li><b>Spend your gold at Nibbet's.</b> It's there to be used. Small items are an easy buy most rooms, and the big ones are worth saving up for.</li>
+    <li><b>Bag items take two taps.</b> The first tap tells you what the item does, and the second tap uses it. So you can always look first.</li>
+    <li><b>Gloamwing is meant to be a tough fight.</b> It eats the light of braziers to heal, so relight them fast, keep Oren's Mend going, and spread out a little so its Wing Gust doesn't catch everyone.</li>
+    <li><b>Want the story read to you?</b> Turn on read-aloud in Settings. It works in Chrome.</li>
+  </ul>
+</section>
+
+<section id="shots">
+  <h2>A look at the game</h2>
+  <p class="lede">Screenshots from the current version.</p>
+  <div class="shots">
+    <figure><img loading="lazy" src="guide/shot-fight.jpg" alt="Chapter 1: a lit brazier in the Gate Hall while the party faces two Gloomlings" width="1366" height="768"><figcaption>Chapter 1, the Gate Hall: a lit brazier, and shadow imps to face.</figcaption></figure>
+    <figure><img loading="lazy" src="guide/shot-color.jpg" alt="Chapter 2: a green flame fills the Greyed Garden with color and light" width="1366" height="768"><figcaption>Chapter 2: a green flame brings color back to the Greyed Garden.</figcaption></figure>
+    <figure><img loading="lazy" src="guide/shot-shop.jpg" alt="Nibbet's Lantern Shop showing three items for sale after clearing a room" width="1366" height="768"><figcaption>Nibbet's Lantern Shop, open after every room.</figcaption></figure>
+    <figure><img loading="lazy" src="guide/shot-boss.jpg" alt="The party faces Gloamwing, a giant shadow moth, in the Lantern Chamber" width="1366" height="768"><figcaption>The Lantern Chamber: the party meets Gloamwing.</figcaption></figure>
+  </div>
+</section>
+
+<section id="devices">
+  <h2>Phone and tablet</h2>
+  <div class="two">
+    <div class="panel">
+      <p style="margin:0">Lanternbearers plays right in the browser. There's nothing to install, and your progress saves in the browser. It's roomiest on a tablet or laptop, but phones work too.</p>
+    </div>
+    <div class="panel">
+      <b>Want an icon on your home screen?</b>
+      <ul>
+        <li><b>Android, Chrome:</b> tap the &#8942; menu, then <b>Add to Home screen</b>.</li>
+        <li><b>iPhone or iPad, Safari:</b> tap Share, then <b>Add to Home Screen</b>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="made">
+  <h2>How it was made</h2>
+  <div class="panel">
+    <ul style="margin:0">
+      <li>Claude's agent team designed, built and tested the game, with Claude Opus directing.</li>
+      <li>Codex (OpenAI) painted every picture.</li>
+      <li>Gemini (Google) wrote Chapter 2's story.</li>
+      <li>Codex (GPT-6 Astra) also built Nibbet's Lantern Shop.</li>
+    </ul>
+  </div>
+</section>
+
+<div class="cta"><a class="btn" href="./">Play Lanternbearers</a></div>
+</main>
+
+<footer><div class="wrap">Lanternbearers is free to play. Light the lanterns and look after each other.</div></footer>
+</body>
+</html>

@@ -4,6 +4,8 @@ A family co-op dungeon crawl that runs in the browser. Light the braziers, push 
 
 **Play:** https://itzapapalotl.github.io/lanternbearers-game/
 
+**Game guide:** https://itzapapalotl.github.io/lanternbearers-game/guide.html
+
 Turn-based, for 1 to 4 players on one screen. There's nothing to install, and it saves in your browser.
 
 - **Chapter 1: The Deep Lanterns.** Relight the lanterns and face the Gloamwing.
