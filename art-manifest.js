@@ -3,6 +3,13 @@
   if (typeof module === 'object' && module.exports) module.exports = art;
   else root.LB_ART = art;
 })(typeof self !== 'undefined' ? self : this, {
+  "boss-color-dragon": {
+    "src": "art/boss-color-dragon.png",
+    "w": 984,
+    "h": 1024,
+    "kind": "boss",
+    "from": "art/raw/boss-color-dragon-v1.png"
+  },
   "boss-gloamwing": {
     "src": "art/boss-gloamwing.png",
     "w": 1024,
@@ -122,6 +129,13 @@
     "kind": "loot",
     "from": "art/raw/loot-bright-oil-v1.png"
   },
+  "loot-ember-crystal": {
+    "src": "art/loot-ember-crystal.png",
+    "w": 214,
+    "h": 256,
+    "kind": "loot",
+    "from": "art/raw/loot-ember-crystal-v1.png"
+  },
   "loot-feather-charm": {
     "src": "art/loot-feather-charm.png",
     "w": 256,
@@ -136,12 +150,40 @@
     "kind": "loot",
     "from": "art/raw/loot-firebomb-v1.png"
   },
+  "loot-frost-crystal": {
+    "src": "art/loot-frost-crystal.png",
+    "w": 236,
+    "h": 256,
+    "kind": "loot",
+    "from": "art/raw/loot-frost-crystal-v1.png"
+  },
   "loot-gold": {
     "src": "art/loot-gold.png",
     "w": 256,
     "h": 243,
     "kind": "loot",
     "from": "art/raw/loot-gold-v1.png"
+  },
+  "loot-grove-crystal": {
+    "src": "art/loot-grove-crystal.png",
+    "w": 204,
+    "h": 256,
+    "kind": "loot",
+    "from": "art/raw/loot-grove-crystal-v1.png"
+  },
+  "loot-heart-locket": {
+    "src": "art/loot-heart-locket.png",
+    "w": 233,
+    "h": 256,
+    "kind": "loot",
+    "from": "art/raw/loot-heart-locket-v1.png"
+  },
+  "loot-lantern-lens": {
+    "src": "art/loot-lantern-lens.png",
+    "w": 256,
+    "h": 252,
+    "kind": "loot",
+    "from": "art/raw/loot-lantern-lens-v1.png"
   },
   "loot-lightning-scroll": {
     "src": "art/loot-lightning-scroll.png",
@@ -150,12 +192,33 @@
     "kind": "loot",
     "from": "art/raw/loot-lightning-scroll-v1.png"
   },
+  "loot-lucky-clover": {
+    "src": "art/loot-lucky-clover.png",
+    "w": 217,
+    "h": 256,
+    "kind": "loot",
+    "from": "art/raw/loot-lucky-clover-v1.png"
+  },
+  "loot-phoenix-feather": {
+    "src": "art/loot-phoenix-feather.png",
+    "w": 246,
+    "h": 256,
+    "kind": "loot",
+    "from": "art/raw/loot-phoenix-feather-v1.png"
+  },
   "loot-potion": {
     "src": "art/loot-potion.png",
     "w": 223,
     "h": 256,
     "kind": "loot",
     "from": "art/raw/loot-potion-v1.png"
+  },
+  "loot-rainbow-cake": {
+    "src": "art/loot-rainbow-cake.png",
+    "w": 237,
+    "h": 256,
+    "kind": "loot",
+    "from": "art/raw/loot-rainbow-cake-v1.png"
   },
   "loot-sharpening-stone": {
     "src": "art/loot-sharpening-stone.png",
@@ -171,12 +234,68 @@
     "kind": "loot",
     "from": "art/raw/loot-shield-charm-v2.png"
   },
+  "loot-snow-globe": {
+    "src": "art/loot-snow-globe.png",
+    "w": 221,
+    "h": 256,
+    "kind": "loot",
+    "from": "art/raw/loot-snow-globe-v1.png"
+  },
   "loot-star-biscuit": {
     "src": "art/loot-star-biscuit.png",
     "w": 249,
     "h": 256,
     "kind": "loot",
     "from": "art/raw/loot-star-biscuit-v1.png"
+  },
+  "loot-star-crystal": {
+    "src": "art/loot-star-crystal.png",
+    "w": 216,
+    "h": 256,
+    "kind": "loot",
+    "from": "art/raw/loot-star-crystal-v1.png"
+  },
+  "monster-chillbat": {
+    "src": "art/monster-chillbat.png",
+    "w": 685,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-chillbat-v1.png"
+  },
+  "monster-chillbat-attack": {
+    "src": "art/monster-chillbat-attack.png",
+    "w": 585,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-chillbat-attack-v1.png"
+  },
+  "monster-clanker": {
+    "src": "art/monster-clanker.png",
+    "w": 486,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-clanker-v1.png"
+  },
+  "monster-clanker-attack": {
+    "src": "art/monster-clanker-attack.png",
+    "w": 477,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-clanker-attack-v1.png"
+  },
+  "monster-frostcub": {
+    "src": "art/monster-frostcub.png",
+    "w": 488,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-frostcub-v1.png"
+  },
+  "monster-frostcub-attack": {
+    "src": "art/monster-frostcub-attack.png",
+    "w": 553,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-frostcub-attack-v1.png"
   },
   "monster-gloomling": {
     "src": "art/monster-gloomling.png",
@@ -205,6 +324,34 @@
     "h": 512,
     "kind": "monster",
     "from": "art/raw/monster-goblin-attack-v1.png"
+  },
+  "monster-greyling": {
+    "src": "art/monster-greyling.png",
+    "w": 463,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-greyling-v1.png"
+  },
+  "monster-greyling-attack": {
+    "src": "art/monster-greyling-attack.png",
+    "w": 484,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-greyling-attack-v1.png"
+  },
+  "monster-magma-blob": {
+    "src": "art/monster-magma-blob.png",
+    "w": 603,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-magma-blob-v1.png"
+  },
+  "monster-magma-blob-attack": {
+    "src": "art/monster-magma-blob-attack.png",
+    "w": 783,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-magma-blob-attack-v1.png"
   },
   "monster-mimic": {
     "src": "art/monster-mimic.png",
@@ -262,6 +409,41 @@
     "kind": "monster",
     "from": "art/raw/monster-sporecap-attack-v1.png"
   },
+  "monster-starwisp": {
+    "src": "art/monster-starwisp.png",
+    "w": 363,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-starwisp-v1.png"
+  },
+  "monster-starwisp-attack": {
+    "src": "art/monster-starwisp-attack.png",
+    "w": 533,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-starwisp-attack-v1.png"
+  },
+  "monster-vine-snapper": {
+    "src": "art/monster-vine-snapper.png",
+    "w": 481,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-vine-snapper-v1.png"
+  },
+  "monster-vine-snapper-attack": {
+    "src": "art/monster-vine-snapper-attack.png",
+    "w": 514,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/monster-vine-snapper-attack-v1.png"
+  },
+  "npc-shopkeeper": {
+    "src": "art/npc-shopkeeper.png",
+    "w": 486,
+    "h": 512,
+    "kind": "monster",
+    "from": "art/raw/npc-shopkeeper-v1.png"
+  },
   "portrait-knight": {
     "src": "art/portrait-knight.jpg",
     "w": 512,
@@ -290,6 +472,13 @@
     "kind": "portrait",
     "from": "art/raw/portrait-wizard-v1.png"
   },
+  "prop-anvil": {
+    "src": "art/prop-anvil.png",
+    "w": 503,
+    "h": 512,
+    "kind": "prop",
+    "from": "art/raw/prop-anvil-v1.png"
+  },
   "prop-barrel": {
     "src": "art/prop-barrel.png",
     "w": 383,
@@ -310,6 +499,34 @@
     "h": 512,
     "kind": "prop",
     "from": "art/raw/prop-brazier-v1.png"
+  },
+  "prop-brazier-blue": {
+    "src": "art/prop-brazier-blue.png",
+    "w": 500,
+    "h": 512,
+    "kind": "prop",
+    "from": "art/raw/prop-brazier-blue-v1.png"
+  },
+  "prop-brazier-green": {
+    "src": "art/prop-brazier-green.png",
+    "w": 500,
+    "h": 512,
+    "kind": "prop",
+    "from": "art/raw/prop-brazier-green-v1.png"
+  },
+  "prop-brazier-red": {
+    "src": "art/prop-brazier-red.png",
+    "w": 500,
+    "h": 512,
+    "kind": "prop",
+    "from": "art/raw/prop-brazier-red-v1.png"
+  },
+  "prop-brazier-violet": {
+    "src": "art/prop-brazier-violet.png",
+    "w": 499,
+    "h": 512,
+    "kind": "prop",
+    "from": "art/raw/prop-brazier-violet-v1.png"
   },
   "prop-chest": {
     "src": "art/prop-chest.png",
@@ -332,12 +549,40 @@
     "kind": "prop",
     "from": "art/raw/prop-crates-v1.png"
   },
+  "prop-crystal-pillar": {
+    "src": "art/prop-crystal-pillar.png",
+    "w": 190,
+    "h": 512,
+    "kind": "prop",
+    "from": "art/raw/prop-crystal-pillar-v1.png"
+  },
+  "prop-flower-bed": {
+    "src": "art/prop-flower-bed.png",
+    "w": 512,
+    "h": 310,
+    "kind": "prop",
+    "from": "art/raw/prop-flower-bed-v1.png"
+  },
+  "prop-furnace": {
+    "src": "art/prop-furnace.png",
+    "w": 445,
+    "h": 512,
+    "kind": "prop",
+    "from": "art/raw/prop-furnace-v1.png"
+  },
   "prop-heart-lantern": {
     "src": "art/prop-heart-lantern.png",
     "w": 265,
     "h": 512,
     "kind": "prop",
     "from": "art/raw/prop-heart-lantern-v1.png"
+  },
+  "prop-ice-crystals": {
+    "src": "art/prop-ice-crystals.png",
+    "w": 380,
+    "h": 512,
+    "kind": "prop",
+    "from": "art/raw/prop-ice-crystals-v1.png"
   },
   "prop-mushrooms": {
     "src": "art/prop-mushrooms.png",
@@ -353,6 +598,13 @@
     "kind": "prop",
     "from": "art/raw/prop-pillar-v1.png"
   },
+  "prop-prism-heart": {
+    "src": "art/prop-prism-heart.png",
+    "w": 279,
+    "h": 512,
+    "kind": "prop",
+    "from": "art/raw/prop-prism-heart-v1.png"
+  },
   "prop-rubble": {
     "src": "art/prop-rubble.png",
     "w": 512,
@@ -367,12 +619,61 @@
     "kind": "prop",
     "from": "art/raw/prop-sarcophagus-v1.png"
   },
+  "prop-star-globe": {
+    "src": "art/prop-star-globe.png",
+    "w": 428,
+    "h": 512,
+    "kind": "prop",
+    "from": "art/raw/prop-star-globe-v1.png"
+  },
   "prop-weapon-rack": {
     "src": "art/prop-weapon-rack.png",
     "w": 361,
     "h": 512,
     "kind": "prop",
     "from": "art/raw/prop-weapon-rack-v1.png"
+  },
+  "room-color-vault": {
+    "src": "art/room-color-vault.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-color-vault-v1.png"
+  },
+  "room-color-vault-lit": {
+    "src": "art/room-color-vault-lit.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-color-vault-lit-v1.png"
+  },
+  "room-ember-forge": {
+    "src": "art/room-ember-forge.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-ember-forge-v1.png"
+  },
+  "room-ember-forge-lit": {
+    "src": "art/room-ember-forge-lit.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-ember-forge-lit-v1.png"
+  },
+  "room-frostfall-cavern": {
+    "src": "art/room-frostfall-cavern.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-frostfall-cavern-v1.png"
+  },
+  "room-frostfall-cavern-lit": {
+    "src": "art/room-frostfall-cavern-lit.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-frostfall-cavern-lit-v1.png"
   },
   "room-gate-hall": {
     "src": "art/room-gate-hall.jpg",
@@ -387,6 +688,20 @@
     "h": 1024,
     "kind": "room",
     "from": "art/raw/room-gate-hall-lit-v1.png"
+  },
+  "room-greyed-garden": {
+    "src": "art/room-greyed-garden.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-greyed-garden-v1.png"
+  },
+  "room-greyed-garden-lit": {
+    "src": "art/room-greyed-garden-lit.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-greyed-garden-lit-v1.png"
   },
   "room-lantern-chamber": {
     "src": "art/room-lantern-chamber.jpg",
@@ -444,6 +759,20 @@
     "kind": "room",
     "from": "art/raw/room-old-armory-lit-v1.png"
   },
+  "room-prism-bridge": {
+    "src": "art/room-prism-bridge.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-prism-bridge-v1.png"
+  },
+  "room-prism-bridge-lit": {
+    "src": "art/room-prism-bridge-lit.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-prism-bridge-lit-v1.png"
+  },
   "room-sleeping-crypt": {
     "src": "art/room-sleeping-crypt.jpg",
     "w": 1536,
@@ -458,12 +787,75 @@
     "kind": "room",
     "from": "art/raw/room-sleeping-crypt-lit-v1.png"
   },
+  "room-starglass-hall": {
+    "src": "art/room-starglass-hall.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-starglass-hall-v1.png"
+  },
+  "room-starglass-hall-lit": {
+    "src": "art/room-starglass-hall-lit.jpg",
+    "w": 1536,
+    "h": 1024,
+    "kind": "room",
+    "from": "art/raw/room-starglass-hall-lit-v1.png"
+  },
   "screen-boss": {
     "src": "art/screen-boss.jpg",
     "w": 1920,
     "h": 1080,
     "kind": "screen",
     "from": "art/raw/screen-boss-v2.png"
+  },
+  "screen-c2-boss": {
+    "src": "art/screen-c2-boss.jpg",
+    "w": 1920,
+    "h": 1080,
+    "kind": "screen",
+    "from": "art/raw/screen-c2-boss-v2.png"
+  },
+  "screen-c2-card": {
+    "src": "art/screen-c2-card.jpg",
+    "w": 1920,
+    "h": 1080,
+    "kind": "screen",
+    "from": "art/raw/screen-c2-card-v1.png"
+  },
+  "screen-c2-map": {
+    "src": "art/screen-c2-map.jpg",
+    "w": 1920,
+    "h": 1080,
+    "kind": "screen",
+    "from": "art/raw/screen-c2-map-v1.png"
+  },
+  "screen-c2-story-1": {
+    "src": "art/screen-c2-story-1.jpg",
+    "w": 1920,
+    "h": 1080,
+    "kind": "screen",
+    "from": "art/raw/screen-c2-story-1-v1.png"
+  },
+  "screen-c2-story-2": {
+    "src": "art/screen-c2-story-2.jpg",
+    "w": 1920,
+    "h": 1080,
+    "kind": "screen",
+    "from": "art/raw/screen-c2-story-2-v1.png"
+  },
+  "screen-c2-story-3": {
+    "src": "art/screen-c2-story-3.jpg",
+    "w": 1920,
+    "h": 1080,
+    "kind": "screen",
+    "from": "art/raw/screen-c2-story-3-v1.png"
+  },
+  "screen-c2-victory": {
+    "src": "art/screen-c2-victory.jpg",
+    "w": 1920,
+    "h": 1080,
+    "kind": "screen",
+    "from": "art/raw/screen-c2-victory-v1.png"
   },
   "screen-camp": {
     "src": "art/screen-camp.jpg",

@@ -252,7 +252,7 @@
   // ---------------------------------------------------------------- particles
   // A particle: x, y, vx, vy (px/s), ax, ay (px/s/s), drag (1/s), life (ms), size -> size1,
   // rgb 'r,g,b', alpha, kind, and layer: 'world' draws under the darkness, 'top' above it.
-  const ADDITIVE = { glow: true, ember: true, mote: true, spark: true, star: true, ring: true };
+  const ADDITIVE = { glow: true, ember: true, mote: true, spark: true, star: true, ring: true, flake: true };
   function Particles(cap) {
     this.list = [];
     this.cap = cap || 600;
@@ -334,8 +334,37 @@
       case 'mote':
       case 'smoke':
         g.drawImage(glow(p.rgb), x - size, y - size * p.squash, size * 2, size * 2 * p.squash);
-        if (p.kind === 'ember') g.drawImage(glow('255,248,215'), x - size * 0.4, y - size * 0.4, size * 0.8, size * 0.8);
+        // An ember's hot core is cream unless a colored flame gave it its own pale heart (core).
+        if (p.kind === 'ember') g.drawImage(glow(p.core || '255,248,215'), x - size * 0.4, y - size * 0.4, size * 0.8, size * 0.8);
         break;
+      case 'flake': {
+        // A six-armed snowflake with little barbs; it spins slowly as it drifts.
+        g.save();
+        g.translate(x, y);
+        g.rotate(p.rot);
+        g.strokeStyle = `rgb(${p.rgb})`;
+        g.lineCap = 'round';
+        g.lineWidth = Math.max(1, size * 0.22);
+        for (let i = 0; i < 3; i++) {
+          g.rotate(Math.PI / 3);
+          g.beginPath();
+          g.moveTo(-size, 0);
+          g.lineTo(size, 0);
+          g.stroke();
+        }
+        g.lineWidth = Math.max(0.8, size * 0.14);
+        for (let i = 0; i < 6; i++) {
+          g.rotate(Math.PI / 3);
+          g.beginPath();
+          g.moveTo(size * 0.55, 0);
+          g.lineTo(size * 0.78, -size * 0.22);
+          g.moveTo(size * 0.55, 0);
+          g.lineTo(size * 0.78, size * 0.22);
+          g.stroke();
+        }
+        g.restore();
+        break;
+      }
       case 'spark':
       case 'streak': {
         const len = p.len || (p.kind === 'spark' ? 0.035 : 0.07);
@@ -380,8 +409,9 @@
         break;
       case 'coin': {
         const spin = Math.max(0.18, Math.abs(Math.cos(p.age / 70 + p.phase)));
-        g.fillStyle = '#ffd24a';
-        g.strokeStyle = '#7a4b0c';
+        // Gold by default; fill and edge recolor it (the Clanker's brass bolts).
+        g.fillStyle = p.fill || '#ffd24a';
+        g.strokeStyle = p.edge || '#7a4b0c';
         g.lineWidth = 2;
         g.beginPath();
         g.ellipse(x, y, size * spin, size, 0, 0, TAU);
@@ -516,6 +546,19 @@
     const n = parseInt(String(hex).replace('#', '').padEnd(6, '0').slice(0, 6), 16) || 0;
     return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
   }
+  // shade() as an '#rrggbb' string, for building palettes from one flame color.
+  function shadeHex(hex, amt) {
+    const m = shade(hex, amt).match(/\d+/g).map(Number);
+    return '#' + m.map((v) => clamp(v, 0, 255).toString(16).padStart(2, '0')).join('');
+  }
+  // Blend two 'r,g,b' strings; t = 0 is a, t = 1 is b.
+  function mixRgb(a, b, t) {
+    if (!b || t <= 0) return a;
+    if (!a || t >= 1) return b;
+    const pa = String(a).split(',').map(Number);
+    const pb = String(b).split(',').map(Number);
+    return pa.map((v, i) => Math.round(lerp(v, pb[i], t))).join(',');
+  }
   function roundRect(g, x, y, w, h, r) {
     r = Math.min(r, w / 2, h / 2);
     g.beginPath();
@@ -570,10 +613,29 @@
     g.restore();
   }
 
-  // Procedural flame: layered wobbling teardrops. (x, y) is the base of the fire.
-  function flame(g, x, y, size, t, s) {
+  // A colored flame's layers, built once per flame color: the color itself outside, paler in
+  // the middle and almost white at the heart, the way the gold flame goes orange to cream.
+  const flamePals = {};
+  function flamePalette(hex) {
+    if (!hex) return null;
+    if (flamePals[hex]) return flamePals[hex];
+    const rgb = rgbOf(hex);
+    return (flamePals[hex] = {
+      rgb,
+      pale: rgbOf(shadeHex(hex, 0.55)),
+      deep: rgbOf(shadeHex(hex, -0.3)),
+      outer: rgba(rgb, 0.92),
+      mid: rgba(rgbOf(shadeHex(hex, 0.38)), 0.95),
+      inner: rgba(rgbOf(shadeHex(hex, 0.8)), 0.98),
+      tongue: rgba(rgbOf(shadeHex(hex, 0.3)), 0.9),
+    });
+  }
+
+  // Procedural flame: layered wobbling teardrops. (x, y) is the base of the fire. pal (from
+  // flamePalette) colors it; without one it burns the gold brazier's orange.
+  function flame(g, x, y, size, t, s, pal) {
     if (size < 1) return;
-    const layers = [
+    const layers = pal ? [[pal.outer, 1, 0], [pal.mid, 0.72, 1.7], [pal.inner, 0.42, 3.1]] : [
       ['rgba(255,96,24,0.92)', 1, 0],
       ['rgba(255,170,50,0.95)', 0.72, 1.7],
       ['rgba(255,236,170,0.98)', 0.42, 3.1],
@@ -598,17 +660,50 @@
       const ty = y - size * (0.25 + ph * 0.7);
       const r = size * 0.1 * (1 - ph);
       if (r < 0.5) continue;
-      g.fillStyle = 'rgba(255,170,60,0.9)';
+      g.fillStyle = pal ? pal.tongue : 'rgba(255,170,60,0.9)';
       g.beginPath();
       g.ellipse(tx, ty, r * 0.7, r * 1.3, 0, 0, TAU);
       g.fill();
     }
   }
 
+  // A cluster of crystal shards standing on (x, baseY): the stand-in for Chapter 2's crystal
+  // props. n shards, the tallest h high, in the given color.
+  function crystals(g, x, baseY, w, h, color, n, seedKey) {
+    const r = makeRng(strHash(String(seedKey || color)));
+    for (let i = 0; i < n; i++) {
+      const k = (i + 0.5) / n;
+      const cx = x + (k - 0.5) * w;
+      const ch = h * (0.45 + 0.55 * (1 - Math.abs(k - 0.5) * 1.6)) * (0.85 + r() * 0.3);
+      const cw = w / n * 0.7;
+      const lean = (k - 0.5) * 0.5;
+      g.beginPath();
+      g.moveTo(cx - cw / 2, baseY);
+      g.lineTo(cx - cw * 0.3 + lean * ch * 0.5, baseY - ch * 0.85);
+      g.lineTo(cx + lean * ch * 0.6, baseY - ch);
+      g.lineTo(cx + cw * 0.35 + lean * ch * 0.5, baseY - ch * 0.8);
+      g.lineTo(cx + cw / 2, baseY);
+      g.closePath();
+      g.fillStyle = shade(color, -0.15 + 0.3 * (i % 2));
+      g.fill();
+      g.stroke();
+      g.fillStyle = 'rgba(255,255,255,0.35)';
+      g.beginPath();
+      g.moveTo(cx - cw * 0.25, baseY - ch * 0.1);
+      g.lineTo(cx - cw * 0.2 + lean * ch * 0.5, baseY - ch * 0.8);
+      g.lineTo(cx - cw * 0.05 + lean * ch * 0.5, baseY - ch * 0.75);
+      g.lineTo(cx - cw * 0.08, baseY - ch * 0.1);
+      g.closePath();
+      g.fill();
+    }
+  }
+
   // Simple, tidy prop shapes for props whose art hasn't arrived. The box is w x h with its
-  // base centered at (x, baseY).
-  function propShape(g, type, x, baseY, w, h) {
+  // base centered at (x, baseY). opts.color (an '#rrggbb' flame color) fills a colored
+  // brazier's bowl with crystal of that color.
+  function propShape(g, type, x, baseY, w, h, opts) {
     const top = baseY - h;
+    const color = (opts && opts.color) || null;
     g.save();
     g.lineJoin = 'round';
     g.strokeStyle = 'rgba(10,10,20,0.85)';
@@ -645,7 +740,89 @@
         g.fill();
         g.stroke();
         ell(x, baseY - h * 0.64, w * 0.44, h * 0.1, '#5a5463');
-        ell(x, baseY - h * 0.64, w * 0.36, h * 0.07, '#17151c');
+        ell(x, baseY - h * 0.64, w * 0.36, h * 0.07, color ? shade(color, -0.45) : '#17151c');
+        // A colored brazier's bowl holds a few crystals of its color (the game draws the flame).
+        if (color) crystals(g, x, baseY - h * 0.66, w * 0.5, h * 0.3, color, 4, 'bowl' + color);
+        break;
+      }
+      case 'flower-bed': {
+        box(x - w * 0.46, baseY - h * 0.42, w * 0.92, h * 0.4, '#6b6d7c', 6);
+        ell(x, baseY - h * 0.42, w * 0.42, h * 0.1, '#4a7a3c');
+        const blooms = [[-0.28, 0.72, '#ff8fb0'], [-0.08, 0.86, '#ffd36a'], [0.14, 0.78, '#8fd0ff'], [0.32, 0.68, '#d09aff']];
+        for (const [dx, hh, col] of blooms) {
+          g.strokeStyle = '#3f7a38';
+          g.lineWidth = 3;
+          g.beginPath();
+          g.moveTo(x + dx * w, baseY - h * 0.44);
+          g.lineTo(x + dx * w, baseY - h * hh);
+          g.stroke();
+          g.strokeStyle = 'rgba(10,10,20,0.85)';
+          ell(x + dx * w, baseY - h * hh, w * 0.07, w * 0.07, col);
+        }
+        break;
+      }
+      case 'ice-crystals':
+        crystals(g, x, baseY - h * 0.04, w * 0.9, h * 0.95, color || '#8fd6ff', 5, 'ice');
+        break;
+      case 'anvil': {
+        box(x - w * 0.22, baseY - h * 0.4, w * 0.44, h * 0.38, '#3d3f4c', 4);
+        roundRect(g, x - w * 0.46, top + h * 0.12, w * 0.92, h * 0.3, 6);
+        g.fillStyle = '#6f7384';
+        g.fill();
+        g.stroke();
+        g.fillStyle = 'rgba(255,255,255,0.18)';
+        g.fillRect(x - w * 0.4, top + h * 0.15, w * 0.8, h * 0.06);
+        break;
+      }
+      case 'furnace': {
+        box(x - w * 0.46, top + h * 0.06, w * 0.92, h * 0.92, '#4a3a3c', 8);
+        box(x - w * 0.3, top + h * 0.4, w * 0.6, h * 0.42, '#1a1014', 6);
+        g.fillStyle = color ? shade(color, 0.1) : '#ff7a3a';
+        g.beginPath();
+        g.ellipse(x, top + h * 0.7, w * 0.2, h * 0.12, 0, 0, TAU);
+        g.fill();
+        box(x - w * 0.14, top, w * 0.28, h * 0.1, '#5a4a4c', 3);
+        break;
+      }
+      case 'star-globe': {
+        box(x - w * 0.2, baseY - h * 0.3, w * 0.4, h * 0.28, '#4f5366', 4);
+        const gr = g.createRadialGradient(x - w * 0.1, top + h * 0.3, 4, x, top + h * 0.38, w * 0.4);
+        gr.addColorStop(0, '#e9d8ff');
+        gr.addColorStop(1, color || '#8a5fd6');
+        ell(x, top + h * 0.38, w * 0.38, w * 0.38, gr);
+        g.fillStyle = 'rgba(255,255,255,0.9)';
+        for (const [sx, sy] of [[-0.18, 0.28], [0.12, 0.2], [0.2, 0.5], [-0.05, 0.55]]) {
+          g.beginPath();
+          g.arc(x + sx * w, top + h * sy, w * 0.025, 0, TAU);
+          g.fill();
+        }
+        break;
+      }
+      case 'crystal-pillar':
+        crystals(g, x, baseY - h * 0.03, w * 0.7, h * 0.97, color || '#b9a6ff', 3, 'pillar');
+        break;
+      case 'prism-heart': {
+        box(x - w * 0.4, baseY - h * 0.22, w * 0.8, h * 0.2, '#5d6680', 4);
+        const gr = g.createLinearGradient(x - w * 0.3, top, x + w * 0.3, baseY);
+        ['#6ec8ff', '#7be07b', '#ff7a52', '#c08bff'].forEach((c, i) => gr.addColorStop(i / 3, c));
+        g.beginPath();
+        g.moveTo(x, top);
+        g.lineTo(x + w * 0.3, top + h * 0.3);
+        g.lineTo(x + w * 0.18, baseY - h * 0.22);
+        g.lineTo(x - w * 0.18, baseY - h * 0.22);
+        g.lineTo(x - w * 0.3, top + h * 0.3);
+        g.closePath();
+        g.fillStyle = gr;
+        g.fill();
+        g.stroke();
+        g.fillStyle = 'rgba(255,255,255,0.4)';
+        g.beginPath();
+        g.moveTo(x - w * 0.02, top + h * 0.08);
+        g.lineTo(x - w * 0.22, top + h * 0.32);
+        g.lineTo(x - w * 0.12, baseY - h * 0.26);
+        g.lineTo(x - w * 0.06, top + h * 0.3);
+        g.closePath();
+        g.fill();
         break;
       }
       case 'chest': {
@@ -924,6 +1101,99 @@
     g.restore();
   }
 
+  // A chubby stone-grey dragon for the Color Dragon before its painting arrives: a round body
+  // with a swirly rainbow belly, stubby wings, crystal back spikes and big curious eyes. The box
+  // is w x h centered on (cx, cy); it faces right.
+  function dragon(g, cx, cy, w, h) {
+    g.save();
+    g.lineJoin = 'round';
+    const outline = 'rgba(14,12,24,0.9)';
+    const blob = (x, y, rx, ry, fill, rot) => {
+      g.beginPath();
+      g.ellipse(x, y, rx, ry, rot || 0, 0, TAU);
+      g.fillStyle = fill;
+      g.fill();
+      g.lineWidth = 4;
+      g.strokeStyle = outline;
+      g.stroke();
+    };
+    // Tail curling behind.
+    g.lineCap = 'round';
+    g.lineWidth = w * 0.07;
+    g.strokeStyle = '#6f7182';
+    g.beginPath();
+    g.moveTo(cx - w * 0.28, cy + h * 0.18);
+    g.quadraticCurveTo(cx - w * 0.5, cy + h * 0.3, cx - w * 0.46, cy + h * 0.02);
+    g.stroke();
+    g.lineWidth = w * 0.03;
+    g.strokeStyle = '#c5d2ff';
+    g.beginPath();
+    g.moveTo(cx - w * 0.47, cy + h * 0.04);
+    g.lineTo(cx - w * 0.44, cy - h * 0.06);
+    g.stroke();
+    // Stubby wings and the round body.
+    blob(cx - w * 0.1, cy - h * 0.24, w * 0.16, h * 0.09, '#5c5e70', -0.5);
+    blob(cx + w * 0.12, cy - h * 0.26, w * 0.15, h * 0.08, '#5c5e70', 0.4);
+    blob(cx, cy + h * 0.08, w * 0.33, h * 0.3, '#7d7f90');
+    // The belly, swirling with the four trapped flames.
+    blob(cx + w * 0.02, cy + h * 0.14, w * 0.22, h * 0.2, '#a9abbb');
+    g.save();
+    g.beginPath();
+    g.ellipse(cx + w * 0.02, cy + h * 0.14, w * 0.2, h * 0.18, 0, 0, TAU);
+    g.clip();
+    ['#6ec8ff', '#7be07b', '#ff7a52', '#c08bff'].forEach((c, i) => {
+      g.strokeStyle = c;
+      g.lineWidth = w * 0.03;
+      g.globalAlpha = 0.85;
+      g.beginPath();
+      g.arc(cx + w * 0.02, cy + h * 0.14, w * (0.04 + i * 0.045), i * 1.2, i * 1.2 + 4.2);
+      g.stroke();
+    });
+    g.restore();
+    g.globalAlpha = 1;
+    // Crystal spikes along the back, little feet.
+    g.fillStyle = '#c5d2ff';
+    g.lineWidth = 3;
+    g.strokeStyle = outline;
+    for (let i = 0; i < 4; i++) {
+      const sx = cx - w * 0.22 + i * w * 0.12;
+      const sy = cy - h * 0.2 + Math.abs(i - 1.5) * h * 0.02;
+      g.beginPath();
+      g.moveTo(sx - w * 0.03, sy);
+      g.lineTo(sx, sy - h * 0.1);
+      g.lineTo(sx + w * 0.03, sy);
+      g.closePath();
+      g.fill();
+      g.stroke();
+    }
+    blob(cx - w * 0.16, cy + h * 0.38, w * 0.09, h * 0.05, '#6a6c7c');
+    blob(cx + w * 0.14, cy + h * 0.38, w * 0.09, h * 0.05, '#6a6c7c');
+    // Head, snout, a friendly smile and big curious eyes.
+    blob(cx + w * 0.3, cy - h * 0.18, w * 0.17, h * 0.16, '#8a8c9c');
+    blob(cx + w * 0.42, cy - h * 0.12, w * 0.1, h * 0.07, '#9a9cab');
+    g.lineWidth = 3;
+    g.strokeStyle = outline;
+    g.beginPath();
+    g.arc(cx + w * 0.4, cy - h * 0.09, w * 0.05, 0.2, 2.2);
+    g.stroke();
+    for (const [ex, er] of [[cx + w * 0.29, w * 0.045], [cx + w * 0.38, w * 0.04]]) {
+      g.fillStyle = '#ffffff';
+      g.beginPath();
+      g.arc(ex, cy - h * 0.22, er, 0, TAU);
+      g.fill();
+      g.stroke();
+      g.fillStyle = '#1a1430';
+      g.beginPath();
+      g.arc(ex + er * 0.25, cy - h * 0.215, er * 0.55, 0, TAU);
+      g.fill();
+      g.fillStyle = '#ffffff';
+      g.beginPath();
+      g.arc(ex + er * 0.4, cy - h * 0.25, er * 0.2, 0, TAU);
+      g.fill();
+    }
+    g.restore();
+  }
+
   // Round marker badge above usable things: 'light' (flame), 'open' (sparkle),
   // 'help' (heart), 'heal' (plus) and 'target' (crosshair). Dark center, bright glyph.
   const BADGE = {
@@ -1008,6 +1278,6 @@
     TAU, clamp, lerp, smoothstep, ease, seed, rand, range, pick, noise, flicker,
     canvas, glow, hole, shadow, star, scaled, silhouette, greyed,
     Clock, Particles, Floaters, Shake, FONT, NUM_FONT,
-    shade, rgbOf, roundRect, strHash, token, flame, prop: propShape, stoneRoom, moth, badge,
+    shade, shadeHex, rgbOf, mixRgb, roundRect, strHash, token, flame, flamePalette, prop: propShape, stoneRoom, moth, dragon, badge,
   };
 });

@@ -19,6 +19,12 @@
   const WARM = '255,176,86';
   const GOLD = '255,212,110';
   const HERO_COLORS = { knight: '#4a7be0', ranger: '#4fb06a', wizard: '#a36bf0', lightbringer: '#f0a63a' };
+  // Chapter 2's colored flames (data.flames wins; these are the plan's colors for when it's missing).
+  const FLAME_HEX = { blue: '#6ec8ff', green: '#7be07b', red: '#ff7a52', violet: '#c08bff' };
+  const COLOR_IDX = { blue: 0, green: 1, red: 2, violet: 3 };
+  const COLOR_NAMES = ['blue', 'green', 'red', 'violet'];
+  const NCOL = 4;
+  const TINT_A = 0.3; // how strongly colored light tints the squares it falls on
 
   // Spots inside each painting as fractions of its width and height (as painted, facing right):
   // lantern = where the lantern glows, tip = where shots start, eyes = the pair that shows in
@@ -38,6 +44,21 @@
       eyes: [0.67, 0.37], gap: 0.085, eye: '140,226,255', gloom: true, defeat: 'boss', color: '#3b2a6a',
       spots: [[0.21, 0.17], [0.28, 0.4], [0.27, 0.72], [0.88, 0.3], [0.85, 0.49], [0.82, 0.73], [0.64, 0.52]],
     },
+    // Chapter 2 (Phase 2), measured on the accepted art with qa/harness/measure.html (a 10% grid, so
+    // about 0.02 precision). smoke = the puff colors a summon of this monster swirls in; rim = the
+    // violet outline for dark-on-dark figures; flying = floats and flutters; mouth = where vines,
+    // breath and gobbled flames come from; belly = the dragon's glowing tummy.
+    greyling: { eyes: [0.64, 0.52], gap: 0.24, eye: '240,240,255', defeat: 'smudge', color: '#8a8a98', smoke: ['120,120,138', '88,88,104'], rim: true },
+    chillbat: { eyes: [0.59, 0.5], gap: 0.14, eye: '120,220,255', defeat: 'frost', color: '#8fd4ff', flying: true },
+    frostcub: { eyes: [0.575, 0.27], gap: 0.11, eye: '110,200,255', defeat: 'frost', color: '#e8f4ff', tip: [0.15, 0.17] },
+    'magma-blob': { eyes: [0.67, 0.45], gap: 0.22, eye: '255,210,120', defeat: 'blob', color: '#ff7a3a' },
+    blobbit: { eyes: [0.67, 0.45], gap: 0.22, eye: '255,210,120', defeat: 'blob', color: '#ff9a5a' },
+    clanker: { eyes: [0.57, 0.19], gap: 0.14, eye: '255,160,60', defeat: 'clank', color: '#c8903a' },
+    'vine-snapper': { eyes: [0.615, 0.11], gap: 0.13, eye: '220,240,120', defeat: 'petals', color: '#5fbf4a', mouth: [0.62, 0.3] },
+    starwisp: { eyes: [0.51, 0.36], gap: 0.18, eye: '240,220,255', defeat: 'twinkle', color: '#c9a0ff', flying: true, tip: [0.85, 0.47] },
+    // Pebblebelly faces right: head top right, open mouth beside it, the rainbow belly low center.
+    'color-dragon': { eyes: [0.7, 0.2], gap: 0.08, eye: '255,235,170', defeat: 'dragon', color: '#8c8ca0', dragon: true,
+      mouth: [0.83, 0.26], belly: [0.6, 0.66] },
   };
   // Action poses: '<art>-attack' (a lunge, shot or spell) and 'hero-<id>-down' (sitting and
   // dazed, stars painted in). Every file is trimmed to 512 px tall, so each pose has its own
@@ -55,6 +76,13 @@
     'hero-lightbringer-down': { h: 0.8, lantern: [0.187, 0.8] },
     'monster-slinger-attack': { tip: [0.93, 0.13] },
     'monster-sporecap-attack': { ax: 0.4 },
+    // Chapter 2 poses whose shape changes (measured on qa/harness/measure.html): the Starwisp's
+    // bolt extends to the right of its body, the Magma Blob squashes long and low, the Chillbat
+    // folds its wings, the Frostcub winds up with the snowball in its right hand.
+    'monster-starwisp-attack': { ax: 0.35, tip: [0.9, 0.5] },
+    'monster-magma-blob-attack': { ax: 0.42 },
+    'monster-chillbat-attack': { ax: 0.55 },
+    'monster-frostcub-attack': { ax: 0.5, tip: [0.86, 0.3] },
   };
   const RIM_RGB = '#a27bff'; // the violet rim light on shadow monsters
 
@@ -74,7 +102,7 @@
   };
   // '' = no label (Shield Wall already announced itself as an ability).
   const STATUS_LABEL = { sleepy: 'Sleepy!', shield: '', 'shield-wall': '', feather: 'Bouncy!', 'feather-charm': 'Bouncy!',
-    'bright-oil': 'Brighter!' };
+    'bright-oil': 'Brighter!', frozen: 'Frozen!', chilled: 'Chilled!' };
   // Same-type events in a row play together, each starting this many ms after the last.
   const GROUP = { damage: 110, heal: 90, push: 0, defeated: 140, light: 260, status: 60, spotted: 120 };
 
@@ -113,9 +141,31 @@
       playing: 0, queue: Promise.resolve(), hooks: null, pending: null, lastBy: null, lastDefeat: null,
       taps: [], rulesGrid: null, rulesAt: -1e9, gustAt: -1e9,
       lit: new Float32Array(COLS * ROWS), model: new Uint8Array(COLS * ROWS), corr: new Float32Array(COLS * ROWS),
+      // Colored light per square (Chapter 2): NCOL amounts per cell, eased toward colGoal.
+      col: new Float32Array(COLS * ROWS * NCOL), colGoal: new Float32Array(COLS * ROWS * NCOL), rulesColors: null,
       t: 0, last: 0, destroyed: false,
     };
     let view = { cssW: 0, cssH: 0, dpr: 1, s: 1, ox: 0, oy: 0, k: 1 };
+
+    // ------------------------------------------------------------ colored flames (Chapter 2)
+    // A flame color's hex, 'r,g,b' and flame palette, from data.flames or the plan's defaults.
+    function flameHex(color) {
+      if (!color) return null;
+      const f = data.flames && data.flames[color];
+      return (f && f.hex) || FLAME_HEX[color] || null;
+    }
+    const flameRgb = (color) => {
+      const hex = flameHex(color);
+      return hex ? FX.rgbOf(hex) : null;
+    };
+    const flamePal = (color) => FX.flamePalette(flameHex(color));
+    const isColor = (v) => typeof v === 'string' && COLOR_IDX[v] != null && !!flameHex(v);
+    // The hero's lantern tint, whatever field the rules keep it in.
+    function tintOf(src) {
+      if (!src) return null;
+      for (const v of [src.tint, src.tintColor, src.lanternColor, src.status && src.status.tint]) if (isColor(v)) return v;
+      return null;
+    }
 
     // ------------------------------------------------------------ art
     const images = {};
@@ -170,19 +220,22 @@
     function variant(sp, kind) {
       if (!sp[kind]) {
         if (kind === 'grey') sp.grey = FX.greyed(sp.cv);
-        else sp[kind] = FX.silhouette(sp.cv, kind === 'white' ? '#ffffff' : kind === 'red' ? '#ff3b2b' : '#070914');
+        else sp[kind] = FX.silhouette(sp.cv, kind === 'white' ? '#ffffff' : kind === 'red' ? '#ff3b2b' : kind === 'ice' ? '#9ad8ff' : '#070914');
       }
       return sp[kind];
     }
-    // A soft violet halo hugging a sprite's outline with its inside cut away (drawn additively,
-    // so the creature's own colours stay as painted). pad is in painting pixels.
-    function rimOf(sp) {
-      if (sp.rim) return sp.rim;
+    // A soft halo hugging a sprite's outline with its inside cut away (drawn additively, so the
+    // creature's own colours stay as painted): violet for shadow monsters, or the given 'r,g,b'
+    // (the Color Dragon's glow). One halo is cached per color. pad is in painting pixels.
+    function rimOf(sp, rgb) {
+      const color = rgb ? `rgb(${rgb})` : RIM_RGB;
+      sp.rims = sp.rims || {};
+      if (sp.rims[color]) return sp.rims[color];
       const k = view.k;
       const pad = Math.max(3, Math.round(6 * k));
       const cv = FX.canvas(sp.cv.width + pad * 2, sp.cv.height + pad * 2);
       const g = cv.getContext('2d');
-      const sil = FX.silhouette(sp.cv, RIM_RGB);
+      const sil = FX.silhouette(sp.cv, color);
       g.filter = `blur(${Math.max(1, Math.round(pad * 0.4))}px)`;
       for (let i = 0; i < 8; i++) {
         const ang = (i / 8) * TAU;
@@ -191,8 +244,8 @@
       g.filter = 'none';
       g.globalCompositeOperation = 'destination-out';
       g.drawImage(sp.cv, pad, pad);
-      sp.rim = { cv, pad: pad / k };
-      return sp.rim;
+      sp.rims[color] = { cv, pad: pad / k };
+      return sp.rims[color];
     }
     // Every action pose loads up front (a Mimic only appears mid-fight), so the first lunge or
     // fall already has its picture. Ids with no art are skipped by image().
@@ -225,17 +278,21 @@
       return L.footPoint(c, r);
     }
     const centerOf = (c, r) => ({ x: FX0 + (c + 0.5) * CW, y: FY0 + (r + 0.5) * CH });
+    // A monster's data `scale` (a Blobbit is a Magma Blob at 0.65) shrinks the whole figure.
     function unitH(u) {
-      if (!u.boss) return UNIT_H * CH;
+      const k = u.baseScale || 1;
+      if (!u.boss) return UNIT_H * CH * k;
       const img = image(u.art);
-      return BOSS_W * CW * (img ? img.naturalHeight / img.naturalWidth : 0.9);
+      return BOSS_W * CW * k * (img ? img.naturalHeight / img.naturalWidth : u.look.dragon ? 0.85 : 0.9);
     }
     function unitW(u) {
-      if (u.boss) return BOSS_W * CW;
+      if (u.boss) return BOSS_W * CW * (u.baseScale || 1);
       const img = image(u.art);
       return img ? (unitH(u) * img.naturalWidth) / img.naturalHeight : unitH(u) * 0.56;
     }
-    const hover = (u) => (u.boss ? CH * 0.22 : 0);
+    // Flying things float above their square: the boss high, bats and wisps a little (they're
+    // painted in the air, claws and comet tails at the bottom, so they sit off the foot point).
+    const hover = (u) => (u.boss ? CH * 0.22 : u.flying ? CH * 0.2 : 0);
     function headY(u) {
       const h = unitH(u) * (u.scale || 1);
       if (u.downAmt > 0.5) {
@@ -284,17 +341,55 @@
       // Start loading the action poses now, so the first lunge or fall already has its picture.
       image(art + '-attack');
       if (kind === 'hero') image(art + '-down');
+      const traits = Array.isArray(def.traits) ? def.traits : [];
+      const has = (name) => traits.indexOf(name) >= 0;
       return {
         uid, kind, type, def, look, boss, size: boss ? Math.max(2, def.size || 2) : 1, art, pose: '', poseUntil: 0,
         color: def.color || look.color || HERO_COLORS[type] || '#7a6a9a',
         letter: String(def.name || type || '?').charAt(0).toUpperCase(),
+        baseScale: num(def.scale) > 0 ? num(def.scale) : 1,
+        flying: !boss && kind === 'monster' && (has('flying') || !!look.flying),
+        sneaky: kind === 'monster' && (has('sneaky') || type === 'greyling'),
+        grabby: kind === 'monster' && (has('grabby') || !!def.grab),
         c: 0, r: 0, x: 0, y: 0, placed: false, facing: 1, hp: 1, maxHp: 1, hpShown: 1,
         down: false, downAmt: 0, alpha: 1, scale: 1, collapse: 0, reveal: 1, vis: true, spotted: false,
         flash: 0, tint: 0, glowHeal: 0, ox: 0, oy: 0, hop: 0, rot: 0, squash: 0,
         light: 2, lightR: null, status: {}, shield: false, dying: false, dim: 0, feed: 0, flapFast: 0,
-        phase: rand() * TAU, blinkAt: 0, blinkEnd: 0, wispAcc: rand(), zAcc: rand(),
+        // Chapter 2: a crystal-tinted lantern (heroes) and the boss's glow color, each with a crossfade.
+        lanternColor: null, lanternRgb: null, lanternPrev: null, lanternMix: 1,
+        glowColor: null, glowRgb: null, glowPrev: null, glowMix: 1, glowPulse: 0, belly: 0,
+        phase: rand() * TAU, blinkAt: 0, blinkEnd: 0, wispAcc: rand(), zAcc: rand(), flakeAcc: 0, // not rand(): keeps Chapter 1's idle phases exactly as before
       };
     }
+    // Set a hero's lantern tint or the boss's glow; animate = crossfade from the old color.
+    function setLantern(u, color, animate) {
+      const rgb = flameRgb(color);
+      if (!rgb) {
+        u.lanternColor = u.lanternRgb = u.lanternPrev = null;
+        u.lanternMix = 1;
+        return Promise.resolve();
+      }
+      if (rgb === u.lanternRgb) return Promise.resolve();
+      u.lanternPrev = animate ? u.lanternRgb : null;
+      u.lanternColor = color;
+      u.lanternRgb = rgb;
+      u.lanternMix = animate ? 0 : 1;
+      if (!animate) return Promise.resolve();
+      return clock.tween(D(600), (v) => { u.lanternMix = v; }).then(() => { u.lanternPrev = null; });
+    }
+    function setGlow(u, color, animate) {
+      const rgb = flameRgb(color);
+      if (!rgb || rgb === u.glowRgb) return Promise.resolve();
+      u.glowPrev = animate && u.glowRgb ? u.glowRgb : null;
+      u.glowColor = color;
+      u.glowRgb = rgb;
+      u.glowMix = u.glowPrev ? 0 : 1;
+      if (!u.glowPrev) return Promise.resolve();
+      return clock.tween(D(700), (v) => { u.glowMix = v; }).then(() => { u.glowPrev = null; });
+    }
+    // The color a tinted lantern or glowing boss shows right now (mid-crossfade included).
+    const lanternRgbOf = (u) => (u.lanternRgb ? FX.mixRgb(u.lanternPrev || u.lanternRgb, u.lanternRgb, u.lanternMix) : null);
+    const glowRgbOf = (u) => (u.glowRgb ? FX.mixRgb(u.glowPrev || u.glowRgb, u.glowRgb, u.glowMix) : null);
     function placeUnit(u, c, r) {
       const a = anchor(u.size, c, r);
       u.c = c;
@@ -317,8 +412,12 @@
         u.light = l >= 1 ? l : num(u.def.light, 2);
         u.lightR = null;
         u.dimGoal = !!(src.moved && src.acted && !src.down);
+        setLantern(u, tintOf(src), false);
       } else {
         u.spotted = !!src.spotted;
+        // The boss's aura follows m.glow; before the rules set it, data's glow.start stands in.
+        const glow = isColor(src.glow) ? src.glow : u.def.glow && u.def.glow.start;
+        if (isColor(glow)) setGlow(u, glow, false);
       }
     }
     function makeProp(src, uid) {
@@ -329,14 +428,21 @@
       const rp = S.room && (S.room.props || []).find((x) => x && x.type === src.type && sameCell(cellOf(x.at), at));
       const nudge = Array.isArray(src.nudge) ? src.nudge : rp && Array.isArray(rp.nudge) ? rp.nudge : [0, 0];
       const brazier = src.type === 'brazier';
+      // A colored brazier (Chapter 2): the placement's color, looked up like nudge when the rules
+      // don't copy it. Its own painting (colorArt) is tried first, then the gold brazier's.
+      const color = brazier ? (isColor(src.color) ? src.color : rp && isColor(rp.color) ? rp.color : null) : null;
+      const art = def.art || 'prop-' + src.type;
+      const colorArt = color ? (def.colorArt && def.colorArt[color]) || 'prop-brazier-' + color : null;
+      const pal = color ? flamePal(color) : null;
       return {
         uid, type: src.type, def, c: at[0], r: at[1], brazier,
         x: q.x + q.w / 2 + num(nudge[0]) * CW, y: q.y + q.h * 0.9 + num(nudge[1]) * CH,
         sortY: q.y + q.h * 0.62 + num(nudge[1]) * CH,
-        art: def.art || 'prop-' + src.type, openArt: def.openArt || null, h: num(def.height, 1) * CH,
+        art, arts: colorArt && ART[colorArt] ? [colorArt, art] : [art], openArt: def.openArt || null, h: num(def.height, 1) * CH,
         lightR: brazier ? num(def.light, 4) : 0, lit: !!src.lit, litAmt: src.lit ? 1 : 0, bloom: 0, flare: 0,
         opened: !!src.opened, shake: 0, seed: rand() * 100, emberAcc: 0, openT: -1e9,
         glow: def.glow ? FX.rgbOf(def.glow) : null,
+        color, hex: color ? flameHex(color) : null, rgb: pal ? pal.rgb : null, pal, colorIdx: color ? COLOR_IDX[color] : -1,
       };
     }
     const roomOf = (id) => (data.rooms || []).find((r) => r && r.id === id) || null;
@@ -398,7 +504,7 @@
       for (const uid of [...S.props.keys()]) if (!seenP.has(uid)) S.props.delete(uid);
       S.spores = /grotto/.test(S.roomId || '') || [...S.props.values()].some((p) => p.type === 'mushrooms');
       S.darkGoal = calm || S.peek === 'on' ? CLEAR_DARK : st.status === 'partyDown' ? 0.93 : FULL_DARK;
-      if (calm) for (const p of S.props.values()) if (p.type === 'heart-lantern' && st.status === 'victory') heartOn(p, 1);
+      if (calm) for (const p of S.props.values()) if (isHeart(p) && st.status === 'victory') heartOn(p, 1);
       S.rulesAt = -1e9;
       S.print = printOf(st);
       S.agree = true;
@@ -409,8 +515,11 @@
         refreshVisibility(true);
         S.lit.fill(0);
         S.corr.fill(0);
+        S.colSnap = true; // the colored light is simply there in a new scene, no fade-in
       }
     }
+    // The great lantern at the back of a boss room: Chapter 1's Heart Lantern or Chapter 2's Prism Heart.
+    const isHeart = (p) => p.type === 'heart-lantern' || p.type === 'prism-heart';
     function heartOn(p, amt) {
       p.lightR = 6;
       p.lit = true;
@@ -497,6 +606,53 @@
       }
       return g;
     }
+    // Colored light (Chapter 2). The board's own map while animating: each lit colored brazier
+    // colors the squares within its light, and a crystal-tinted lantern colors the hero's.
+    function markCol(g, c0, r0, R, k, v) {
+      if (k < 0 || k >= NCOL) return;
+      for (let r = Math.max(0, r0 - R); r <= Math.min(ROWS - 1, r0 + R); r++) {
+        for (let c = Math.max(0, c0 - R); c <= Math.min(COLS - 1, c0 + R); c++) {
+          const i = idx(c, r) * NCOL + k;
+          if (g[i] < v) g[i] = v;
+        }
+      }
+    }
+    function modelColors() {
+      const g = S.colGoal;
+      g.fill(0);
+      for (const p of S.props.values()) {
+        if (p.colorIdx >= 0 && p.lightR && p.litAmt > 0.001) markCol(g, p.c, p.r, Math.round(p.lightR), p.colorIdx, Math.min(1, p.litAmt * 1.25));
+      }
+      for (const u of S.units.values()) {
+        if (u.kind !== 'hero' || !u.lanternColor || u.alpha < 0.05) continue;
+        markCol(g, u.c, u.r, Math.round(u.lightR != null ? u.lightR : u.light), COLOR_IDX[u.lanternColor], 1);
+      }
+      return g;
+    }
+    // The rules' color map (LB_RULES.colors: a 12x7 grid of color-name lists), read while idle.
+    function readRulesColors() {
+      if (!rules || typeof rules.colors !== 'function' || !S.state) return null;
+      try {
+        const m = rules.colors(S.state);
+        if (!Array.isArray(m) || !m.length) return null;
+        let at = null;
+        if (m.length === COLS && Array.isArray(m[0]) && m[0].length === ROWS) at = (c, r) => m[c][r];
+        else if (m.length === ROWS && Array.isArray(m[0]) && m[0].length === COLS) at = (c, r) => m[r][c];
+        else if (m.length === COLS * ROWS) at = (c, r) => m[idx(c, r)];
+        if (!at) return null;
+        const out = new Float32Array(COLS * ROWS * NCOL);
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const list = at(c, r);
+            if (!Array.isArray(list)) continue;
+            for (const name of list) if (COLOR_IDX[name] != null) out[idx(c, r) * NCOL + COLOR_IDX[name]] = 1;
+          }
+        }
+        return out;
+      } catch (err) {
+        return null;
+      }
+    }
     // The rules' light map, read while idle so the board shows exactly what the rules see.
     function readRules() {
       if (!rules || typeof rules.light !== 'function' || !S.state) return null;
@@ -538,29 +694,41 @@
         const h = hs[id];
         if (h) s += id + (h.at || '') + (h.down ? 'd' : '') + h.light + ';';
       }
-      for (const m of st.monsters || []) if (m) s += m.uid + (m.at || '') + m.hp + (m.spotted ? 's' : '') + ';';
+      for (const m of st.monsters || []) if (m) s += m.uid + (m.at || '') + m.hp + (m.spotted ? 's' : '') + (m.glow || '') + ';';
       for (const p of st.props || []) if (p) s += (p.uid || '') + (p.lit ? 'L' : '') + (p.opened ? 'O' : '') + ';';
+      for (const id in hs) if (hs[id]) s += tintOf(hs[id]) || '';
       return s + (st.flares || []).length;
     }
     function updateLight(dt) {
       const model = modelGrid();
       let target = model;
+      let colTarget = null;
       if (!S.playing && rules && S.state) {
         if (clock.now - S.rulesAt > 250) {
           S.agree = printOf(S.state) === S.print;
           S.rulesGrid = S.agree ? readRules() : null;
+          S.rulesColors = S.agree ? readRulesColors() : null;
           S.rulesAt = clock.now;
           refreshVisibility(false);
         }
         if (S.rulesGrid) target = S.rulesGrid;
+        if (S.rulesColors) colTarget = S.rulesColors;
       } else {
         S.agree = false;
         refreshVisibility(false);
       }
+      if (!colTarget) colTarget = modelColors();
       const src = sources();
       S.src = src;
       const k1 = Math.min(1, dt / 160);
       const k2 = Math.min(1, dt / 240);
+      const kc = S.colSnap ? 1 : Math.min(1, dt / 220);
+      S.colSnap = false;
+      S.colAny = false;
+      for (let i = 0; i < S.col.length; i++) {
+        S.col[i] += (colTarget[i] - S.col[i]) * kc;
+        if (S.col[i] > 0.01) S.colAny = true;
+      }
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const i = idx(c, r);
@@ -594,8 +762,10 @@
         } catch (err) { /* fall back to the board's own map */ }
       }
       if (u.spotted) return true;
+      // A sneaky Greyling shows only in bright brazier light; lantern light alone doesn't reveal it.
+      const need = u.sneaky ? 2 : 1;
       for (let r = u.r; r < u.r + u.size; r++) {
-        for (let c = u.c; c < u.c + u.size; c++) if (inGrid(c, r) && S.model[idx(c, r)] > 0) return true;
+        for (let c = u.c; c < u.c + u.size; c++) if (inGrid(c, r) && S.model[idx(c, r)] >= need) return true;
       }
       return false;
     }
@@ -769,6 +939,25 @@
       g.stroke();
       if (dashed) g.setLineDash([]);
     }
+    // An aim square (Fireburst, Firebomb, the Snow Globe) in rainbow light: a dark edge under a
+    // thick, pulsing orange line and a deeper fill, so four colors of light can't wash it out
+    // (polish-2). Rooms without colored light keep the thin square above.
+    function aimSquare(g, at, hot, wave) {
+      const q = L.cellRect(at[0], at[1]);
+      FX.roundRect(g, q.x + 9, q.y + 9, q.w - 18, q.h - 18, 14);
+      g.fillStyle = `rgba(110,34,4,${hot ? 0.5 : 0.3 + 0.08 * wave})`;
+      g.fill();
+      g.fillStyle = `rgba(255,150,60,${hot ? 0.34 : 0.14 + 0.1 * wave})`;
+      g.fill();
+      g.setLineDash([12, 8]);
+      g.lineWidth = hot ? 10 : 8;
+      g.strokeStyle = 'rgba(40,14,2,0.7)';
+      g.stroke();
+      g.lineWidth = hot ? 6 : 3.5 + 1.5 * wave;
+      g.strokeStyle = `rgba(255,${hot ? 204 : 170},88,${hot ? 1 : 0.88 + 0.12 * wave})`;
+      g.stroke();
+      g.setLineDash([]);
+    }
     function ellipseRing(g, x, y, rx, ry, rgb, t) {
       const pulse = 0.5 + 0.5 * Math.sin(t * 5.5);
       g.fillStyle = `rgba(${rgb},${0.12 + 0.1 * pulse})`;
@@ -834,20 +1023,23 @@
           square(g, m.at, ease.outBack(appear), k2 === hk, 0.6, '255,206,92', '255,226,140');
         }
         for (const [k2, aim] of o.aims) {
-          square(g, aim.at, 1, k2 === hk, 0.5 + 0.5 * Math.sin(t * 3 + aim.at[0]), '255,140,60', '255,176,96', true);
+          const wave = 0.5 + 0.5 * Math.sin(t * 3 + aim.at[0]);
+          if (S.colAny) aimSquare(g, aim.at, k2 === hk, wave);
+          else square(g, aim.at, 1, k2 === hk, wave, '255,140,60', '255,176,96', true);
         }
         for (const at of o.effect || []) square(g, at, 1, false, 0.5 + 0.5 * Math.sin(t * 4), '255,214,110', '255,236,170');
       }
       const area = S.area || hoverArea();
       if (area) {
         const pulse = 0.5 + 0.5 * Math.sin(t * 6);
+        const rainbow = S.colAny; // colored light washes the preview out, so it gets a deeper fill and a dark edge
         let c0 = 99;
         let c1 = -1;
         let r0 = 99;
         let r1 = -1;
         for (const [c, r] of area) {
           const q = L.cellRect(c, r);
-          g.fillStyle = `rgba(255,110,34,${0.27 + 0.1 * pulse})`;
+          g.fillStyle = `rgba(255,110,34,${0.27 + 0.1 * pulse + (rainbow ? 0.12 : 0)})`;
           g.fillRect(q.x + 2, q.y + 2, q.w - 4, q.h - 4);
           c0 = Math.min(c0, c);
           c1 = Math.max(c1, c);
@@ -857,6 +1049,11 @@
         if ((c1 - c0 + 1) * (r1 - r0 + 1) === area.length) {
           const a = L.cellRect(c0, r0);
           FX.roundRect(g, a.x + 2, a.y + 2, (c1 - c0 + 1) * CW - 4, (r1 - r0 + 1) * CH - 4, 12);
+          if (rainbow) {
+            g.lineWidth = 10;
+            g.strokeStyle = 'rgba(40,14,2,0.7)';
+            g.stroke();
+          }
           g.lineWidth = 5;
           g.strokeStyle = `rgba(255,170,80,${0.7 + 0.3 * pulse})`;
           g.stroke();
@@ -895,7 +1092,7 @@
         const a = u.alpha * (u.kind === 'monster' ? u.reveal : 1);
         if (a < 0.02) continue;
         const gp = groundOf(u);
-        const lift = u.hop + (u.boss ? CH * 0.5 : 0);
+        const lift = u.hop + (u.boss ? CH * 0.5 : u.flying ? CH * 0.3 : 0);
         const k = 1 / (1 + lift / (CH * 1.6));
         const lying = u.downAmt;
         const rx = (u.boss ? 1.25 * CW : (0.36 + 0.22 * lying) * CW) * k;
@@ -908,10 +1105,17 @@
 
     // ------------------------------------------------------------ props and units
     function propSprite(p) {
-      const id = p.opened && p.openArt && image(p.openArt) ? p.openArt : p.art;
-      const sp = sprite(id, p.h);
-      if (sp) return sp;
-      return drawn('prop:' + p.type, CW, p.h, (g, w, h) => FX.prop(g, p.type, w / 2, h, w, h));
+      if (p.opened && p.openArt && image(p.openArt)) {
+        const osp = sprite(p.openArt, p.h);
+        if (osp) return osp;
+      }
+      // A colored brazier tries its own painting first, then the gold brazier's (p.arts).
+      for (const id of p.arts || [p.art]) {
+        const sp = sprite(id, p.h);
+        if (sp) return sp;
+      }
+      const hex = p.hex || null;
+      return drawn('prop:' + p.type + (hex ? ':' + hex : ''), CW, p.h, (g, w, h) => FX.prop(g, p.type, w / 2, h, w, h, { color: hex }));
     }
     function firePos(p) {
       const sp = propSprite(p);
@@ -929,7 +1133,7 @@
       }
       if (p.brazier && p.litAmt > 0.01) {
         const fp = firePos(p);
-        FX.flame(ctx, fp.x, fp.y, CH * 0.72 * Math.min(1, p.litAmt * 1.3) * (1 + p.bloom * 1.6), S.t, p.seed);
+        FX.flame(ctx, fp.x, fp.y, CH * 0.72 * Math.min(1, p.litAmt * 1.3) * (1 + p.bloom * 1.6), S.t, p.seed, p.pal);
       }
     }
     function unitSprite(u) {
@@ -937,7 +1141,9 @@
       const sp = sprite(u.art, h);
       if (sp) return sp;
       if (u.boss) {
-        return drawn('moth', BOSS_W * CW, BOSS_W * CW * 0.9, (g, w, h2) => FX.moth(g, w / 2, h2 / 2, w, h2, 0));
+        const bw = BOSS_W * CW * (u.baseScale || 1);
+        if (u.look.dragon) return drawn('dragon', bw, bw * 0.85, (g, w, h2) => FX.dragon(g, w / 2, h2 / 2, w, h2));
+        return drawn('moth', bw, bw * 0.9, (g, w, h2) => FX.moth(g, w / 2, h2 / 2, w, h2, 0));
       }
       if (u.type === 'mimic') {
         const chest = image('prop-chest');
@@ -1015,12 +1221,20 @@
       let sx = u.scale * (1 - breath * 0.006);
       let sy = u.scale * (1 + breath * 0.016);
       let lift = u.hop;
-      if (u.boss) {
+      if (u.boss && u.look.dragon) {
+        // The dragon's round belly breathes, and it bobs on its stubby wings.
+        sy *= 1 + 0.02 * Math.sin(t * TAU * (u.flapFast ? 2.4 : 0.6) + u.phase);
+        lift += hover(u) + Math.sin((t * TAU) / 2.3 + u.phase) * 7;
+      } else if (u.boss) {
         // Wing flap: a slow sideways breathing of the whole moth, faster when it swoops.
         const flap = Math.sin(t * TAU * (u.flapFast ? 2.8 : 0.85) + u.phase);
         sx *= 1 + 0.035 * flap;
         sy *= 1 - 0.012 * flap;
         lift += hover(u) + Math.sin((t * TAU) / 2.3 + u.phase) * 7;
+      } else if (u.flying) {
+        // Bats and wisps float with a light wing-beat bob.
+        sy *= 1 + 0.03 * Math.sin(t * TAU * (u.flapFast ? 3.5 : 1.6) + u.phase);
+        lift += hover(u) + Math.sin((t * TAU) / 1.7 + u.phase) * 5;
       }
       if (u.uid === S.activeId) lift += activeHop(t);
       if (u.squash) {
@@ -1073,9 +1287,14 @@
       };
       if (grey && down > 0.02 && down < 0.99) over('grey', down);
       over('dark', u.dim * 0.38);
+      // Frozen: a cold blue cast (and ice at the feet, drawn below); chilled: a hint of it.
+      // A hero keeps a light cold cast: at 0.4 the pale silhouette read as "knocked out" (playtest-2 L6).
+      if (u.status.frozen) over('ice', (u.kind === 'hero' ? 0.16 : 0.4) + 0.08 * Math.sin(t * 4 + u.phase));
+      else if (u.status.chilled) over('ice', 0.18);
       over('red', u.tint * 0.6);
       over('white', u.flash * 0.92);
       ctx.restore();
+      if (u.status.frozen && down < 0.5) drawIce(u, a, t);
       u.dx = x;
       u.dy = y;
       u.dsx = sx;
@@ -1087,6 +1306,32 @@
       u.dax = pose.ax;
       u.dpose = pose;
       u.dsp = sp;
+    }
+    // Ice shards around a frozen unit's feet (the frozen status).
+    function drawIce(u, a, t) {
+      const g = groundOf(u);
+      const w = (u.dw || unitW(u)) * 0.5;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, a) * 0.9;
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(230,248,255,0.9)';
+      const shards = [[-0.55, 0.42, 0.55], [-0.2, 0.7, 0.9], [0.18, 0.62, 0.75], [0.52, 0.4, 0.5], [0, 0.4, 0.45]];
+      shards.forEach(([dx, hk, wk], i) => {
+        const x = g.x + dx * w;
+        const h = CH * 0.42 * hk * (1 + 0.04 * Math.sin(t * 3 + i));
+        const sw = w * 0.22 * wk;
+        ctx.fillStyle = i % 2 ? 'rgba(150,215,255,0.78)' : 'rgba(190,235,255,0.72)';
+        ctx.beginPath();
+        ctx.moveTo(x - sw, g.y + CH * 0.06);
+        ctx.lineTo(x - sw * 0.35, g.y - h);
+        ctx.lineTo(x + sw * 0.25, g.y - h * 0.85);
+        ctx.lineTo(x + sw, g.y + CH * 0.06);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      });
+      ctx.restore();
     }
     function drawGhost(gh) {
       const sp = unitSprite(gh.u);
@@ -1155,9 +1400,80 @@
       if (S.lift) holeIn(dg, 'flood', S.lift.cx, S.lift.cy, S.lift.r, S.lift.r * 0.85, S.lift.a);
       dg.globalCompositeOperation = 'source-over';
       dg.globalAlpha = 1;
+      tintDarkness();
     }
     function drawDarkness() {
       if (darkOn) ctx.drawImage(darkCv, 0, 0, W, H);
+    }
+    // A monster the party has spotted but can't light (the Snow Globe's mist spots it where it
+    // stands) is smothered by the darkness, a faint ghost. Draw it once more, mostly through the
+    // dark, so it reads as a real shape. Chapter 2 and later only (polish-2).
+    function drawSpottedInDark() {
+      if (!darkOn || !laterChapter()) return;
+      for (const u of S.units.values()) {
+        if (u.kind !== 'monster' || !u.spotted || u.dying || u.reveal < 0.5 || u.alpha < 0.3) continue;
+        const k = (1 - lightAt(u.x + u.ox, u.y - 4)) * 0.72;
+        if (k < 0.08) continue;
+        const keep = u.alpha;
+        u.alpha = keep * k;
+        drawUnit(u);
+        u.alpha = keep;
+      }
+      ctx.globalAlpha = 1;
+    }
+    // Colored light (Chapter 2): a 12x7 picture with one pixel per square, blended across the
+    // floor by the browser's smoothing, so the tint follows the rules' squares with soft edges.
+    // Squares with two colors show the blend, the way the rules let different colors combine.
+    const tintCv = typeof document !== 'undefined' ? FX.canvas(COLS, ROWS) : null;
+    const tg = tintCv && tintCv.getContext('2d');
+    const tintImg = tg && tg.createImageData(COLS, ROWS);
+    let colTab = null;
+    function colorTable() {
+      const key = COLOR_NAMES.map(flameHex).join('|');
+      if (colTab && colTab.key === key) return colTab.rgb;
+      colTab = { key, rgb: COLOR_NAMES.map((n) => String(flameRgb(n) || '0,0,0').split(',').map(Number)) };
+      return colTab.rgb;
+    }
+    function tintDarkness() {
+      if (!S.colAny || !tg) return;
+      const tab = colorTable();
+      const d = tintImg.data;
+      for (let i = 0; i < COLS * ROWS; i++) {
+        let sum = 0;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        for (let k = 0; k < NCOL; k++) {
+          const a = S.col[i * NCOL + k];
+          if (a <= 0.01) continue;
+          sum += a;
+          r += tab[k][0] * a;
+          g += tab[k][1] * a;
+          b += tab[k][2] * a;
+        }
+        const o = i * 4;
+        if (sum <= 0.01) {
+          d[o] = d[o + 1] = d[o + 2] = d[o + 3] = 0;
+          continue;
+        }
+        d[o] = Math.round(r / sum);
+        d[o + 1] = Math.round(g / sum);
+        d[o + 2] = Math.round(b / sum);
+        d[o + 3] = Math.round(Math.min(1, sum) * 255);
+      }
+      tg.putImageData(tintImg, 0, 0);
+      dg.globalCompositeOperation = 'source-over';
+      dg.globalAlpha = TINT_A;
+      dg.imageSmoothingEnabled = true;
+      dg.imageSmoothingQuality = 'high';
+      dg.drawImage(tintCv, (FX0 * DW) / W, (FY0 * DH) / H, (COLS * CW * DW) / W, (ROWS * CH * DH) / H);
+      dg.globalAlpha = 1;
+    }
+    // The Prism Heart's light cycles through the four flame colors.
+    function rainbowRgb(t) {
+      const k = (t * 0.35) % NCOL;
+      const i = Math.floor(k);
+      return FX.mixRgb(flameRgb(COLOR_NAMES[i]) || GOLD, flameRgb(COLOR_NAMES[(i + 1) % NCOL]) || GOLD, k - i);
     }
     // The fully lit painting shows inside bright brazier light (so it blooms outward as each
     // brazier is lit) and everywhere once the room is cleared. The masked copy is cached and only
@@ -1248,10 +1564,14 @@
         if (u.kind !== 'hero' || u.alpha < 0.05) continue;
         const f = FX.flicker(t, u.phase);
         const lp = spot(u, ...((u.dpose && u.dpose.lantern) || u.look.lantern || [0.55, 0.5]));
-        soft(WARM, lp.x, lp.y, CW * 0.62, CW * 0.62, (0.5 + 0.12 * f) * u.alpha * (0.45 + 0.55 * calm));
-        glowAt('255,236,190', lp.x, lp.y, CW * 0.16, CW * 0.16, (0.55 + 0.15 * f) * u.alpha);
-        soft(WARM, u.x + u.ox, u.y - CH * 0.15, CW * 2.3, CH * 2.0, (0.1 + 0.02 * f) * calm * u.alpha);
-        if (u.glowHeal > 0.01) soft('120,255,160', u.x + u.ox, u.y - unitH(u) * 0.45, CW * 0.9, CH * 1.2, u.glowHeal * 0.6);
+        // A crystal-tinted lantern glows in its color; its pool is a little stronger so the tint reads.
+        const lr = lanternRgbOf(u);
+        const warm = lr || WARM;
+        soft(warm, lp.x, lp.y, CW * 0.62, CW * 0.62, (0.5 + 0.12 * f) * u.alpha * (0.45 + 0.55 * calm));
+        glowAt(lr ? FX.mixRgb(lr, '255,255,255', 0.55) : '255,236,190', lp.x, lp.y, CW * 0.16, CW * 0.16, (0.55 + 0.15 * f) * u.alpha);
+        soft(warm, u.x + u.ox, u.y - CH * 0.15, CW * 2.3, CH * 2.0, (0.1 + 0.02 * f) * calm * u.alpha * (lr ? 1.7 : 1));
+        if (u.lanternFlare > 0.01) soft(warm, lp.x, lp.y, CW * 1.8, CW * 1.8, u.lanternFlare * 0.8 * u.alpha);
+        if (u.glowHeal > 0.01) soft(u.glowHealRgb || '120,255,160', u.x + u.ox, u.y - unitH(u) * 0.45, CW * 0.9, CH * 1.2, u.glowHeal * 0.6);
         if (u.shield || hasShield(u)) {
           const p = 0.5 + 0.5 * Math.sin(t * 3 + u.phase);
           soft('110,170,255', u.x + u.ox, u.y - unitH(u) * 0.45, CW * 0.8, CH * 1.15, 0.22 + 0.12 * p);
@@ -1261,16 +1581,19 @@
         if (p.litAmt > 0.01) {
           const f = FX.flicker(t * 1.3, p.seed);
           if (p.brazier) {
+            // A colored brazier's fire and pool glow in its flame color (Chapter 2); gold stays orange.
             const fp = firePos(p);
-            soft('255,150,60', fp.x, fp.y - CH * 0.2, CW * 1.15, CW * 1.15, (0.62 + 0.12 * f) * p.litAmt * (0.5 + 0.5 * calm));
-            soft('255,140,60', p.x, p.y - CH * 0.3, CW * 3.6, CH * 3.2, (0.15 + 0.03 * f) * p.litAmt * calm);
-          } else if (p.type === 'heart-lantern') {
+            soft(p.rgb ? FX.mixRgb(p.rgb, '255,255,255', 0.25) : '255,150,60', fp.x, fp.y - CH * 0.2, CW * 1.15, CW * 1.15,
+              (0.62 + 0.12 * f) * p.litAmt * (0.5 + 0.5 * calm));
+            soft(p.rgb || '255,140,60', p.x, p.y - CH * 0.3, CW * 3.6, CH * 3.2, (0.15 + 0.03 * f) * p.litAmt * calm * (p.rgb ? 1.5 : 1));
+          } else if (isHeart(p)) {
             const sp = propSprite(p);
-            soft(GOLD, p.x, p.y - sp.h * 0.5, CW * 2.2, CW * 2.2, (0.6 + 0.1 * f) * p.litAmt * (0.6 + 0.4 * calm));
-            glowAt('255,250,220', p.x, p.y - sp.h * 0.5, CW * 0.6, CW * 0.6, 0.9 * p.litAmt);
+            const hc = p.type === 'prism-heart' ? rainbowRgb(t) : GOLD;
+            soft(hc, p.x, p.y - sp.h * 0.5, CW * 2.2, CW * 2.2, (0.6 + 0.1 * f) * p.litAmt * (0.6 + 0.4 * calm));
+            glowAt(p.type === 'prism-heart' ? FX.mixRgb(hc, '255,255,255', 0.6) : '255,250,220', p.x, p.y - sp.h * 0.5, CW * 0.6, CW * 0.6, 0.9 * p.litAmt);
           }
         }
-        if (p.flare > 0.01) soft(GOLD, p.x, p.y - p.h * 0.6, CW * 1.6, CW * 1.6, p.flare);
+        if (p.flare > 0.01) soft(p.rgb || GOLD, p.x, p.y - p.h * 0.6, CW * 1.6, CW * 1.6, p.flare);
         if (p.glow) {
           const sp = propSprite(p);
           const pulse = 0.5 + 0.5 * Math.sin(t * 1.6 + p.seed);
@@ -1279,9 +1602,35 @@
       }
       for (const u of S.units.values()) {
         if (!u.boss || u.alpha < 0.05 || u.reveal < 0.05) continue;
-        // A soft violet pool around the moth, under its gold eyespots (ux #7).
         const bg2 = bossGlow(u);
-        soft('150,110,255', bg2.x, bg2.y, CW * 2.4, CH * 2.1, (0.2 + 0.05 * Math.sin(t * 1.4)) * calm * u.alpha * u.reveal);
+        const ba = u.alpha * u.reveal;
+        const gr = glowRgbOf(u);
+        if (gr) {
+          // The Color Dragon's aura in its current glow color (the telegraph): a pool around it,
+          // a ring on the floor under it, and its belly lit up with the trapped flames.
+          const pulse = 0.5 + 0.5 * Math.sin(t * 2.2 + u.phase) + u.glowPulse;
+          soft(gr, bg2.x, bg2.y, CW * 2.8, CH * 2.4, (0.42 + 0.1 * pulse) * calm * ba);
+          const gp = groundOf(u);
+          glowAt(gr, gp.x, gp.y, CW * 1.9 * (1 + 0.05 * pulse), CH * 0.7 * (1 + 0.05 * pulse), (0.5 + 0.15 * pulse) * ba);
+          // A crisp ring on the floor in the glow color, so the telegraph reads from across the room.
+          ctx.globalAlpha = clamp((0.5 + 0.3 * pulse) * ba, 0, 1);
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = `rgb(${gr})`;
+          ctx.beginPath();
+          ctx.ellipse(gp.x, gp.y, CW * 1.35 * (1 + 0.03 * pulse), CH * 0.5 * (1 + 0.03 * pulse), 0, 0, TAU);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          if (u.look.belly) {
+            const bp = spot(u, u.look.belly[0], u.look.belly[1]);
+            const bw = u.dw || unitW(u);
+            const r = bw * 0.17 * (1 + 0.08 * pulse + u.feed * 0.4 + u.belly * 0.5);
+            glowAt(gr, bp.x, bp.y, r, r * 0.85, Math.min(1, 0.5 + 0.2 * pulse + u.belly) * ba);
+            glowAt(FX.mixRgb(gr, '255,255,255', 0.6), bp.x, bp.y, r * 0.45, r * 0.4, Math.min(1, 0.5 + u.belly) * ba);
+          }
+        } else {
+          // A soft violet pool around the moth, under its gold eyespots (ux #7).
+          soft('150,110,255', bg2.x, bg2.y, CW * 2.4, CH * 2.1, (0.2 + 0.05 * Math.sin(t * 1.4)) * calm * ba);
+        }
         const spots = u.look.spots || [];
         const w = u.dw || unitW(u);
         spots.forEach(([nx, ny], i) => {
@@ -1293,19 +1642,28 @@
       }
       // Shadow monsters (Gloomlings, Gloamwing) are dark on a dark floor, so a faint violet rim
       // traces them once they're seen; it's strongest in the dark and softer in lit squares.
+      // The Color Dragon gets the same rim in its glow color, crossfading as the glow moves on; the
+      // charcoal-ink Greyling gets the violet rim too (look.rim) without the shadow wisps.
       for (const u of S.units.values()) {
-        if (!u.look.gloom || u.dying || !u.dsp || u.dsp.noFlip) continue;
+        const gr = u.boss ? u.glowRgb : null;
+        if ((!u.look.gloom && !u.look.rim && !gr) || u.dying || !u.dsp || u.dsp.noFlip) continue;
         const a = u.alpha * u.reveal;
         if (a < 0.05) continue;
-        const rim = rimOf(u.dsp);
         const dim = 1 - lightAt(u.x, u.y - CH * 0.4);
         const pulse = 0.85 + 0.15 * Math.sin(t * 2.2 + u.phase);
         ctx.save();
         ctx.translate(u.dx, u.dy);
         if (u.drot) ctx.rotate(u.drot);
         ctx.scale(u.dsx * u.dflip, u.dsy);
-        ctx.globalAlpha = clamp(a * pulse * (0.45 + 0.55 * dim) * (u.boss ? 0.7 : 0.8), 0, 1);
-        ctx.drawImage(rim.cv, -u.dw * u.dax - rim.pad, -u.dh - rim.pad, u.dw + rim.pad * 2, u.dh + rim.pad * 2);
+        const rimDraw = (rgb, k) => {
+          const rim = rimOf(u.dsp, rgb);
+          ctx.globalAlpha = clamp(a * k * pulse * (0.45 + 0.55 * dim) * (u.boss ? 0.7 : 0.8), 0, 1);
+          ctx.drawImage(rim.cv, -u.dw * u.dax - rim.pad, -u.dh - rim.pad, u.dw + rim.pad * 2, u.dh + rim.pad * 2);
+        };
+        if (gr) {
+          if (u.glowPrev && u.glowMix < 1) rimDraw(u.glowPrev, 1 - u.glowMix);
+          rimDraw(gr, u.glowMix);
+        } else rimDraw(null, 1);
         ctx.restore();
       }
       for (const tl of S.temps) {
@@ -1395,12 +1753,52 @@
     }
 
     // ------------------------------------------------------------ overheads: bars, badges, stars
-    function hpBar(u) {
+    // Polish that only Chapter 2 and later get, so Chapter 1 looks exactly as it always did.
+    function laterChapter() {
+      const list = data.chapters;
+      return !!(S.state && S.state.chapter && Array.isArray(list) && list.length > 1 && list[0] && list[0].id !== S.state.chapter);
+    }
+    // Where the boss's bar and its name label are, so a small monster's bar (a summoned Greyling
+    // right under the dragon's chin) steps below them instead of landing on the words (polish-2).
+    function bossLabelBox() {
+      if (!laterChapter()) return null;
+      for (const u of S.units.values()) {
+        if (!u.boss || u.dying || u.alpha < 0.3 || u.reveal < 0.5 || u.downAmt > 0.5) continue;
+        const y = headY(u);
+        return { x0: u.x + u.ox - 125, x1: u.x + u.ox + 125, y0: y - 34, y1: y + 22 };
+      }
+      return null;
+    }
+    // Screen-space bounds use the last painted transform, including screen shake. The canvas
+    // clips the painting, so only the visible part of an overhanging figure can cover the HUD.
+    let paintedOffset = { x: 0, y: 0 };
+    function screenBox(b) {
+      if (!b) return null;
+      const rect = canvas.getBoundingClientRect();
+      const sx = rect.width / (view.cssW || rect.width || 1);
+      const sy = rect.height / (view.cssH || rect.height || 1);
+      return { left: Math.max(rect.left, rect.left + (paintedOffset.x + b.x0 * view.s) * sx),
+        right: Math.min(rect.right, rect.left + (paintedOffset.x + b.x1 * view.s) * sx),
+        top: Math.max(rect.top, rect.top + (paintedOffset.y + b.y0 * view.s) * sy),
+        bottom: Math.min(rect.bottom, rect.top + (paintedOffset.y + b.y1 * view.s) * sy) };
+    }
+    function bossFigureScreen() {
+      for (const u of S.units.values()) {
+        if (!u.boss || u.alpha * u.reveal < 0.01 || !u.dsp) continue;
+        // The sprite's four corners include its pose, flip, breath, squash, rotation and hop.
+        const points = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => spot(u, x, y));
+        return screenBox({ x0: Math.min(...points.map((p) => p.x)), x1: Math.max(...points.map((p) => p.x)),
+          y0: Math.min(...points.map((p) => p.y)), y1: Math.max(...points.map((p) => p.y)) });
+      }
+      return null;
+    }
+    function hpBar(u, avoid) {
       const boss = u.boss;
       const w = boss ? 220 : 76;
       const h = boss ? 16 : 10;
       const x = u.x + u.ox - w / 2;
-      const y = u.downAmt > 0.5 ? u.y - CH * 0.72 : headY(u) - (boss ? 0 : 14);
+      let y = u.downAmt > 0.5 ? u.y - CH * 0.72 : headY(u) - (boss ? 0 : 14);
+      if (avoid && !boss && x + w + 3 > avoid.x0 && x - 3 < avoid.x1 && y + h + 3 > avoid.y0 && y - 3 < avoid.y1) y = avoid.y1 + 12;
       const f = clamp(u.hp / Math.max(1, u.maxHp), 0, 1);
       const fs = clamp(u.hpShown / Math.max(1, u.maxHp), 0, 1);
       ctx.fillStyle = 'rgba(8,6,16,0.86)';
@@ -1465,13 +1863,14 @@
     }
     function drawOverheads() {
       const t = S.t;
+      const avoid = bossLabelBox();
       for (const u of S.units.values()) {
         if (u.dying || u.alpha < 0.3) continue;
         if (u.kind === 'monster' && u.reveal < 0.5) continue;
         // A painted knocked-down pose already has its dizzy stars.
         if (u.downAmt > 0.5) {
           if (!downPose(u)) dizzy(u, t);
-        } else if (u.kind === 'monster' || u.hp < u.maxHp) hpBar(u);
+        } else if (u.kind === 'monster' || u.hp < u.maxHp) hpBar(u, avoid);
       }
       const o = S.opt;
       if (!o) return;
@@ -1529,8 +1928,11 @@
           while (p.emberAcc >= 1) {
             p.emberAcc -= 1;
             const fp = firePos(p);
+            // Colored braziers (Chapter 2) throw embers in their flame color with a pale heart.
+            const pal = p.pal;
             parts.add({ kind: 'ember', x: fp.x + range(-0.18, 0.18) * CW, y: fp.y - range(0.1, 0.4) * CH, vx: range(-14, 14),
-              vy: range(-95, -45), ay: -12, size: range(4, 7), size1: 1.5, rgb: pick(['255,150,50', '255,190,80', '255,120,40']),
+              vy: range(-95, -45), ay: -12, size: range(4, 7), size1: 1.5,
+              rgb: pal ? pick([pal.rgb, pal.pale, pal.deep]) : pick(['255,150,50', '255,190,80', '255,120,40']), core: pal ? pal.pale : null,
               life: range(1100, 2300), sway: range(5, 14), swayF: range(0.6, 1.4), fadeIn: 0.05 });
           }
         }
@@ -1579,6 +1981,18 @@
               parts.add({ kind: 'star', x: u.x + range(-0.5, 0.5) * w, y: u.y - hover(u) - range(0.2, 0.9) * h, vy: range(-14, -4),
                 size: range(4, 8), rgb: '170,220,255', life: range(700, 1300), alpha: 0.8 * u.reveal });
             }
+          }
+        }
+        // Snowflakes drift down around chilled monsters and frozen heroes (Chapter 2).
+        if (u.status && (u.status.chilled || u.status.frozen) && !u.dying && u.alpha > 0.3 && u.reveal > 0.3) {
+          u.flakeAcc += s * (u.status.chilled ? 3.2 : 1.6);
+          while (u.flakeAcc >= 1) {
+            u.flakeAcc -= 1;
+            const h = unitH(u);
+            const w = unitW(u);
+            parts.add({ kind: 'flake', x: u.x + u.ox + range(-0.6, 0.6) * w, y: u.y - hover(u) - range(0.3, 1.15) * h, vx: range(-8, 8),
+              vy: range(14, 30), size: range(4, 8), rgb: pick(['200,240,255', '160,220,255', '255,255,255']), alpha: 0.85,
+              life: range(1200, 2000), sway: range(6, 12), swayF: range(0.5, 1), vr: range(-1.5, 1.5), fadeIn: 0.15 });
           }
         }
         // Sleepy heroes snore little z's.
@@ -1650,6 +2064,18 @@
       extra: { kind: 'smoke', size1: 17, layer: 'world', alpha: 0.42, drag: 3 } });
     const ringAt = (x, y, r0, r1, rgb, life, width) => parts.add({ kind: 'ring', x, y, size: r0, size1: r1, squash: 0.46, rgb,
       width: width || 6, life: life || 650, alpha: 0.85, fadeIn: 0.02, fadeOut: 0.6 });
+    // A snowball's splat: a white puff with a few snowflakes (Chapter 2).
+    const snowPuff = (x, y, n) => {
+      burst(x, y, n || 10, { speed: [40, 150], life: [500, 900], size: [10, 18], rgb: ['240,250,255', '200,235,255'], up: 30, jitter: 12,
+        extra: { kind: 'smoke', size1: 34, drag: 2.2, alpha: 0.8, add: false, fadeIn: 0.03 } });
+      burst(x, y, 8, { speed: [60, 200], life: [600, 1100], size: [4, 7], rgb: ['220,245,255', '255,255,255'], up: 60, spin: 3,
+        extra: { kind: 'flake', drag: 1.6, ay: 120 } });
+    };
+    // Lava droplets from a Magma Blob.
+    const lavaDrops = (x, y, n) => burst(x, y, n, { speed: [120, 340], life: [500, 950], size: [5, 11], rgb: ['255,120,40', '255,170,60', '255,90,30'],
+      up: 140, extra: { kind: 'glow', ay: 760, drag: 1.1, size1: 2 } });
+    // Where a creature's mouth is (vines, breath and gobbled flames), else its chest.
+    const mouthOf = (u) => (u.look.mouth ? spot(u, u.look.mouth[0], u.look.mouth[1]) : chestOf(u));
     function hitFlash(u) {
       clock.tween(D(560), (v, raw) => {
         u.flash = S.reduced ? 0 : raw < 0.18 ? 1 : Math.max(0, 1 - (raw - 0.18) * 5);
@@ -1744,6 +2170,31 @@
         g.fillRect(-4, -20, 8, 8);
         g.globalCompositeOperation = 'lighter';
         g.drawImage(FX.glow('255,170,60'), -14, -34, 28, 28);
+      } else if (f.kind === 'snowball' || f.kind === 'globe') {
+        // A packed snowball, or the Snow Globe: a glass ball on a wooden base with flakes inside.
+        const r = f.kind === 'globe' ? 16 : 11;
+        g.rotate(-f.ang + (f.spin || 0));
+        g.fillStyle = f.kind === 'globe' ? 'rgba(200,235,255,0.75)' : '#eef7ff';
+        g.strokeStyle = '#6aa8d8';
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.arc(0, 0, r, 0, TAU);
+        g.fill();
+        g.stroke();
+        g.fillStyle = 'rgba(255,255,255,0.85)';
+        g.beginPath();
+        g.arc(-r * 0.35, -r * 0.35, r * 0.28, 0, TAU);
+        g.fill();
+        if (f.kind === 'globe') {
+          g.fillStyle = '#7a4a25';
+          g.fillRect(-r * 0.6, r * 0.75, r * 1.2, r * 0.4);
+          g.fillStyle = '#ffffff';
+          for (const [dx, dy] of [[-0.3, 0.2], [0.25, -0.1], [0.05, 0.45]]) {
+            g.beginPath();
+            g.arc(dx * r, dy * r, r * 0.08, 0, TAU);
+            g.fill();
+          }
+        }
       } else {
         g.fillStyle = '#a4a9bc';
         g.strokeStyle = '#1c1e2a';
@@ -1769,7 +2220,7 @@
       }
       const dist = Math.hypot(to.x - from.x, to.y - from.y);
       const base = kind === 'arrow' ? 250 : kind === 'spark' || kind === 'sunbolt' ? 320 : 360;
-      const arc = kind === 'sling' ? CH * 0.9 : kind === 'arrow' ? CH * 0.28 : CH * 0.1;
+      const arc = kind === 'sling' ? CH * 0.9 : kind === 'snowball' ? CH * 1.05 : kind === 'arrow' ? CH * 0.28 : CH * 0.1;
       const fx = { layer: 'top', kind, x: from.x, y: from.y, ang: Math.atan2(to.y - from.y, to.x - from.x), a: 1, done: false, draw: drawShot };
       S.fx.push(fx);
       snd(kind);
@@ -1787,6 +2238,8 @@
             size1: 1, rgb: pick(trail), life: range(220, 420) });
         } else if (kind === 'sling' && rand() < 0.5) {
           parts.add({ kind: 'glow', x: px, y: py, size: 4, size1: 1, rgb: '200,200,220', alpha: 0.5, life: 200 });
+        } else if (kind === 'snowball' && rand() < 0.4) {
+          parts.add({ kind: 'flake', x: px, y: py, vx: range(-20, 20), vy: range(0, 30), size: 4, rgb: '230,245,255', alpha: 0.7, life: 400, vr: 3 });
         }
       }).then(() => {
         fx.done = true;
@@ -1799,6 +2252,8 @@
           sparks(to.x, to.y, 10, ['255,230,150', '255,255,255']);
         } else if (kind === 'sling') {
           dust(to.x, to.y, 6);
+        } else if (kind === 'snowball') {
+          snowPuff(to.x, to.y, 12);
         } else {
           sparks(to.x, to.y, 8);
         }
@@ -1861,7 +2316,7 @@
       S.lastBy = a;
       if (!a || !t) return Promise.resolve();
       faceTo(a, t.x);
-      if (kind === 'arrow' || kind === 'spark' || kind === 'sunbolt' || kind === 'sling') return shoot(a, t, hit, kind);
+      if (kind === 'arrow' || kind === 'spark' || kind === 'sunbolt' || kind === 'sling' || kind === 'snowball') return shoot(a, t, hit, kind);
       if (kind === 'gust') return gust(a);
       return lunge(a, t, hit, kind === 'bite');
     }
@@ -1913,7 +2368,7 @@
       snd('rumble');
       shakeIt(11, 1300);
       const g = groundOf(b);
-      ringAt(g.x, g.y, CW * 0.5, CW * 3.6, '170,120,255', 900, 8);
+      ringAt(g.x, g.y, CW * 0.5, CW * 3.6, b.glowRgb || '170,120,255', 900, 8);
       await clock.tween(D(1000), (v, raw) => { b.feed = Math.sin(raw * Math.PI); });
       b.feed = 0;
     }
@@ -1953,6 +2408,8 @@
       faceTo(u, a.x);
       snd('swoop');
       u.flapFast = 1;
+      // The moth trails shadow; the Color Dragon trails its glow color.
+      const trail = glowRgbOf(u) || '40,22,84';
       await clock.tween(D(820), (v, raw) => {
         u.x = lerp(x0, a.x, v);
         u.y = lerp(y0, a.y, v);
@@ -1960,7 +2417,7 @@
         u.scale = 1 + Math.sin(raw * Math.PI) * 0.08;
         if (rand() < 0.6) {
           parts.add({ kind: 'smoke', x: u.x + range(-1.2, 1.2) * CW, y: u.y - u.hop - range(0.4, 1.6) * CH, vx: range(-20, 20),
-            vy: range(-10, 10), size: 16, size1: 34, rgb: '40,22,84', alpha: 0.45, life: 900, layer: 'world' });
+            vy: range(-10, 10), size: 16, size1: 34, rgb: trail, alpha: 0.45, life: 900, layer: 'world' });
         }
       }, ease.inOutCubic);
       u.hop = 0;
@@ -1969,9 +2426,33 @@
       u.r = dest[1];
       u.flapFast = 0;
       shakeIt(5, 300);
-      ringAt(u.x, u.y - CH * 0.6, CW * 0.6, CW * 2.4, '180,170,255', 600, 5);
+      ringAt(u.x, u.y - CH * 0.6, CW * 0.6, CW * 2.4, glowRgbOf(u) || '180,170,255', 600, 5);
       dust(u.x - CW * 0.6, u.y - CH * 0.5, 4);
       dust(u.x + CW * 0.6, u.y - CH * 0.5, 4);
+    }
+    // A flying monster (Chillbat, Starwisp) glides along its whole path in one go with a wing-beat
+    // bob and a pale trail: the Chillbat's hit-and-run flutter away.
+    async function flutter(u, path) {
+      const dest = path[path.length - 1];
+      const a = anchor(u.size, dest[0], dest[1]);
+      const x0 = u.x;
+      const y0 = u.y;
+      faceTo(u, a.x);
+      snd('swoop');
+      u.flapFast = 1;
+      await clock.tween(D(180 + 110 * path.length), (v, raw) => {
+        u.x = lerp(x0, a.x, v);
+        u.y = lerp(y0, a.y, v);
+        u.hop = Math.sin(raw * Math.PI) * CH * 0.3;
+        if (rand() < 0.5) {
+          parts.add({ kind: 'glow', x: u.x + range(-8, 8), y: u.y - hover(u) - unitH(u) * 0.5 + range(-8, 8), vx: range(-20, 20),
+            vy: range(-10, 20), size: range(4, 8), size1: 1, rgb: u.look.eye || '220,220,255', alpha: 0.6, life: range(250, 450) });
+        }
+      }, ease.inOutSine);
+      u.hop = 0;
+      u.flapFast = 0;
+      u.c = dest[0];
+      u.r = dest[1];
     }
     P.move = async (e) => {
       const u = S.units.get(e.uid);
@@ -1980,6 +2461,7 @@
       if (path.length && sameCell(path[0], [u.c, u.r])) path = path.slice(1);
       if (!path.length) return;
       if (u.boss) return swoop(u, path[path.length - 1]);
+      if (u.flying) return flutter(u, path);
       for (const [c, r] of path) await hopTo(u, c, r);
       clock.tween(D(170), (v, raw) => { u.squash = Math.sin(raw * Math.PI) * 0.7; }).then(() => { u.squash = 0; });
     };
@@ -2048,6 +2530,7 @@
       const by = S.units.get(e.by) || S.lastBy;
       recoil(t, by, e.crit ? 24 : 12);
       const c = chestOf(t);
+      if (num(e.armored) > 0) clang(t, c, num(e.armored), by);
       sparks(c.x, c.y, e.crit ? 26 : 12);
       if (e.crit) {
         say(t, amt, 'critdmg');
@@ -2063,6 +2546,52 @@
       }
       await clock.wait(D(e.crit ? 720 : 420));
     };
+    // Armor (the Clanker): a bright clang spark and a small brass shield showing the damage it
+    // blocked, popping up beside the hit and drifting away.
+    function clang(t, c, blocked, by) {
+      snd('clank');
+      sparks(c.x, c.y, 16, ['255,250,200', '255,220,120', '255,255,255']);
+      ringAt(c.x, c.y, CW * 0.1, CW * 0.7, '255,230,150', 420, 5);
+      const side = by && by.x > t.x ? -1 : 1;
+      const fx = { layer: 'top', x: c.x + side * CW * 0.42, y: c.y - CH * 0.1, s: 0, a: 1, done: false, draw(g) {
+        const k = 26 * this.s;
+        if (k < 1) return;
+        g.save();
+        g.translate(this.x, this.y);
+        g.globalAlpha = clamp(this.a, 0, 1);
+        g.lineJoin = 'round';
+        g.beginPath();
+        g.moveTo(-k, -k * 0.9);
+        g.lineTo(k, -k * 0.9);
+        g.lineTo(k, k * 0.1);
+        g.quadraticCurveTo(k, k * 0.8, 0, k * 1.15);
+        g.quadraticCurveTo(-k, k * 0.8, -k, k * 0.1);
+        g.closePath();
+        g.fillStyle = '#d9a648';
+        g.fill();
+        g.lineWidth = 3;
+        g.strokeStyle = '#4a2e0c';
+        g.stroke();
+        g.fillStyle = 'rgba(255,255,255,0.25)';
+        g.fillRect(-k * 0.7, -k * 0.7, k * 0.5, k * 1.2);
+        g.font = `800 ${Math.round(k * 1.05)}px ${FX.NUM_FONT}`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.lineWidth = 4;
+        g.strokeStyle = '#2a1606';
+        g.strokeText('-' + blocked, 0, k * 0.05);
+        g.fillStyle = '#fff6d6';
+        g.fillText('-' + blocked, 0, k * 0.05);
+        g.restore();
+      } };
+      S.fx.push(fx);
+      const y0 = fx.y;
+      clock.tween(D(1100), (v, raw) => {
+        fx.s = raw < 0.2 ? ease.outBack(raw / 0.2) : 1;
+        fx.y = y0 - raw * 40;
+        fx.a = 1 - smoothstep(0.7, 1, raw);
+      }).then(() => { fx.done = true; });
+    }
     P.heal = async (e) => {
       const t = S.units.get(e.target);
       if (!t) return;
@@ -2071,9 +2600,13 @@
       say(t, '+' + amt, 'heal');
       snd('heal');
       const g = groundOf(t);
-      burst(g.x, g.y - CH * 0.2, 16, { speed: [20, 60], life: [700, 1200], size: [6, 11], rgb: ['140,255,170', '200,255,210', '120,240,255'],
+      // Healing from green flame light (source 'green') sparkles in that green.
+      const src = isColor(e.source) ? flameRgb(e.source) : null;
+      const rgbs = src ? [src, FX.mixRgb(src, '255,255,255', 0.5), '200,255,210'] : ['140,255,170', '200,255,210', '120,240,255'];
+      t.glowHealRgb = src;
+      burst(g.x, g.y - CH * 0.2, 16, { speed: [20, 60], life: [700, 1200], size: [6, 11], rgb: rgbs,
         jitter: CW * 0.3, up: 60, extra: { kind: 'star', ay: -40, drag: 1 } });
-      ringAt(g.x, g.y, CW * 0.2, CW * 0.7, '140,255,170', 600, 4);
+      ringAt(g.x, g.y, CW * 0.2, CW * 0.7, rgbs[0], 600, 4);
       clock.tween(D(800), (v, raw) => { t.glowHeal = Math.sin(raw * Math.PI); }).then(() => { t.glowHeal = 0; });
       await clock.wait(D(460));
     };
@@ -2170,6 +2703,135 @@
         u.alpha = 1 - smoothstep(0.75, 1, raw);
       }, ease.inOutQuad);
     }
+    // Chapter 2 defeats. A Greyling smudges away in grey ink; icy things puff into snow; a lava
+    // blob pops into droplets (the split event then grows the Blobbits); the Clanker rattles apart
+    // in bolts and steam; the Vine Snapper wilts into petals; a Starwisp twinkles out.
+    async function smudge(u) {
+      snd('poof');
+      const c = chestOf(u);
+      burst(c.x, c.y, 22, { speed: [30, 150], life: [600, 1100], size: [12, 20], rgb: u.look.smoke || ['120,120,138', '88,88,104'], up: 20,
+        jitter: 18, extra: { kind: 'smoke', size1: 38, drag: 2, alpha: 0.8, add: false, fadeIn: 0.04 } });
+      stars(c.x, c.y, 6, ['240,240,255', '255,255,255'], [40, 140]);
+      await clock.tween(D(460), (v) => {
+        u.alpha = 1 - v;
+        u.collapse = v * 0.5;
+        u.scale = 1 + v * 0.3;
+      }, ease.inQuad);
+    }
+    async function frostPop(u) {
+      snd('freeze');
+      const c = chestOf(u);
+      snowPuff(c.x, c.y, 14);
+      stars(c.x, c.y, 10, ['200,240,255', '255,255,255'], [60, 200]);
+      await clock.tween(D(420), (v) => {
+        u.alpha = 1 - v;
+        u.scale = 1 + v * 0.25;
+      }, ease.inQuad);
+    }
+    async function blobPop(u) {
+      snd('split');
+      const c = chestOf(u);
+      await clock.tween(D(200), (v, raw) => { u.squash = Math.sin(raw * Math.PI) * 1.2; });
+      u.squash = 0;
+      lavaDrops(c.x, c.y, 24);
+      ringAt(u.x, u.y, CW * 0.2, CW * 1.1, '255,150,60', 450, 6);
+      await clock.tween(D(260), (v) => {
+        u.alpha = 1 - v;
+        u.scale = 1 + v * 0.5;
+        u.collapse = v * 0.7;
+      }, ease.outQuad);
+    }
+    async function clankApart(u) {
+      snd('clank');
+      await clock.tween(D(380), (v, raw) => {
+        u.ox = Math.sin(raw * 70) * 5 * (1 - raw * 0.4);
+        u.rot = Math.sin(raw * 53) * 0.06;
+      });
+      u.ox = 0;
+      u.rot = 0;
+      const c = chestOf(u);
+      sparks(c.x, c.y, 18, ['255,230,150', '255,255,255']);
+      burst(c.x, c.y, 10, { speed: [120, 300], life: [1000, 1400], size: [5, 8], rgb: '0,0,0', ang: -Math.PI / 2, spread: 1.3, spin: 10,
+        extra: { kind: 'coin', fill: '#b7b9c6', edge: '#2a2c38', ay: 1100, floor: u.y + 6, fadeOut: 0.25 } });
+      burst(c.x, c.y + 10, 12, { speed: [30, 90], life: [800, 1300], size: [12, 20], rgb: ['220,225,235', '190,195,210'], up: 70, jitter: 16,
+        extra: { kind: 'smoke', size1: 40, drag: 1.4, alpha: 0.7, add: false, fadeIn: 0.05 } });
+      await clock.tween(D(400), (v) => {
+        u.alpha = 1 - v;
+        u.collapse = v;
+      }, ease.inQuad);
+    }
+    async function petals(u) {
+      snd('poof');
+      const c = chestOf(u);
+      burst(c.x, c.y, 26, { speed: [40, 170], life: [800, 1400], size: [6, 11], rgb: ['255,150,190', '255,210,120', '140,220,110', '255,120,150'],
+        up: 40, jitter: 20, extra: { kind: 'glow', drag: 1.4, ay: 90, size1: 3, squash: 0.6, add: false, alpha: 0.95 } });
+      stars(c.x, c.y, 8, ['200,255,170', '255,240,160']);
+      await clock.tween(D(520), (v) => {
+        u.alpha = 1 - v;
+        u.collapse = v * 0.8;
+        u.rot = v * 0.3 * u.facing;
+      }, ease.inQuad);
+    }
+    async function twinkleOut(u) {
+      snd('blink');
+      const c = chestOf(u);
+      stars(c.x, c.y, 26, [u.look.eye || '230,200,255', '255,255,255', '190,160,255'], [60, 260]);
+      ringAt(c.x, c.y, CW * 0.1, CW * 1.2, '220,190,255', 520, 5);
+      await clock.tween(D(420), (v, raw) => {
+        u.alpha = 1 - v;
+        u.scale = 1 + Math.sin(raw * Math.PI) * 0.35;
+        u.oy = -v * 30;
+      }, ease.inQuad);
+    }
+    // Pebblebelly hiccups the four flames out, which zoom off in their colors, and shrinks into
+    // a small friendly rainbow dragon that stays, bobbing happily, until the room changes.
+    async function dragonDefeat(u) {
+      snd('poof');
+      shakeIt(8, 700);
+      flashIt('255,255,255', 0.3);
+      const m = mouthOf(u);
+      const c = chestOf(u);
+      for (let i = 0; i < NCOL; i++) {
+        const rgb = flameRgb(COLOR_NAMES[i]) || GOLD;
+        const ang = -Math.PI / 2 + (i - 1.5) * 0.5;
+        burst(m.x, m.y, 18, { speed: [200, 480], life: [700, 1300], size: [8, 16], rgb: [rgb, FX.mixRgb(rgb, '255,255,255', 0.5)], ang, spread: 0.25,
+          extra: { kind: 'glow', drag: 1.2, ay: -60, size1: 3 } });
+        burst(m.x, m.y, 8, { speed: [120, 300], life: [800, 1400], size: [8, 14], rgb, ang, spread: 0.4, extra: { kind: 'star', drag: 1.4, ay: -40 } });
+      }
+      stars(c.x, c.y, 30, [GOLD, '255,255,230'], [80, 360]);
+      const k0 = u.scale;
+      await clock.tween(D(1300), (v, raw) => {
+        u.scale = lerp(k0, 0.36, v);
+        u.hop = Math.abs(Math.sin(raw * Math.PI * 3)) * CH * 0.25 * (1 - raw);
+      }, ease.inOutQuad);
+      u.hop = 0;
+      // The little dragon lives on as a decoration drawn where the big one stood.
+      const sp = u.dsp;
+      if (sp) {
+        const x = u.x;
+        const y = u.y - hover(u) * 0.4;
+        const w = (u.dw || unitW(u)) * 0.36;
+        const h = (u.dh || unitH(u)) * 0.36;
+        const facing = sp.noFlip ? 1 : u.facing;
+        const ax = u.dax != null ? u.dax : 0.5;
+        const belly = u.look.belly || [0.5, 0.6];
+        const t0 = clock.now;
+        S.fx.push({ layer: 'world', done: false, draw(g) {
+          const t = (clock.now - t0) / 1000;
+          const bob = Math.sin(t * 3) * 4;
+          g.save();
+          g.translate(x, y - bob);
+          g.scale(facing, 1);
+          g.drawImage(sp.cv, -w * ax, -h, w, h);
+          g.globalCompositeOperation = 'lighter';
+          const r = w * 0.3;
+          g.drawImage(FX.glow(rainbowRgb(t)), (belly[0] - ax) * w - r, (belly[1] - 1) * h - r, r * 2, r * 2);
+          g.restore();
+        } });
+      }
+      u.alpha = 0;
+      ringAt(u.x, u.y, CW * 0.3, CW * 2.5, GOLD, 800, 7);
+    }
     P.defeated = async (e) => {
       const u = S.units.get(e.uid);
       if (!u || u.dying) return;
@@ -2181,6 +2843,13 @@
       if (style === 'bones') await clatter(u);
       else if (style === 'wisps') await wisps(u);
       else if (style === 'boss') await bossDefeat(u);
+      else if (style === 'dragon') await dragonDefeat(u);
+      else if (style === 'smudge') await smudge(u);
+      else if (style === 'frost') await frostPop(u);
+      else if (style === 'blob') await blobPop(u);
+      else if (style === 'clank') await clankApart(u);
+      else if (style === 'petals') await petals(u);
+      else if (style === 'twinkle') await twinkleOut(u);
       else await poof(u, style === 'spores');
       S.units.delete(u.uid);
     };
@@ -2205,11 +2874,14 @@
       if (src) syncUnit(u, src);
       u.reveal = visibleNow(u, false) ? 1 : 0;
       u.alpha = 0;
+      // Blobbits from a split hop out of the popped blob instead of swirling in.
+      if (S.split && S.split.into.has(e.uid)) return blobHop(u, S.split);
       snd('summon');
       const c = chestOf(u);
-      burst(c.x, c.y, 18, { speed: [20, 60], life: [500, 900], size: [12, 20], rgb: ['50,26,96', '80,50,140'], jitter: CW * 0.5,
+      // Shadow things swirl in from violet smoke; Greylings from grey ink (look.smoke).
+      burst(c.x, c.y, 18, { speed: [20, 60], life: [500, 900], size: [12, 20], rgb: u.look.smoke || ['50,26,96', '80,50,140'], jitter: CW * 0.5,
         extra: { kind: 'smoke', size1: 6, alpha: 0.8, add: false, layer: 'top' } });
-      stars(c.x, c.y, 10, ['190,160,255', '150,220,255']);
+      stars(c.x, c.y, 10, u.look.smoke ? ['240,240,255', '200,200,220'] : ['190,160,255', '150,220,255']);
       await clock.tween(D(520), (v) => {
         u.alpha = v;
         u.scale = 0.4 + 0.6 * v;
@@ -2217,6 +2889,29 @@
       u.alpha = 1;
       u.scale = 1;
     };
+    async function blobHop(u, from) {
+      u.reveal = 1;
+      u.alpha = 1;
+      const x1 = u.x;
+      const y1 = u.y;
+      const x0 = from.x;
+      const y0 = from.y + CH * 0.3;
+      u.x = x0;
+      u.y = y0;
+      faceTo(u, x1);
+      await clock.tween(D(460), (v, raw) => {
+        u.x = lerp(x0, x1, v);
+        u.y = lerp(y0, y1, v);
+        u.hop = Math.sin(raw * Math.PI) * CH * 0.8;
+        u.scale = 0.5 + 0.5 * v;
+        u.squash = raw < 0.5 ? -0.3 * Math.sin(raw * Math.PI) : 0;
+      }, ease.outQuad);
+      u.hop = 0;
+      u.scale = 1;
+      lavaDrops(u.x, u.y - CH * 0.2, 8);
+      snd('split');
+      clock.tween(D(260), (v, raw) => { u.squash = Math.sin(raw * Math.PI) * 0.9; }).then(() => { u.squash = 0; });
+    }
 
     // The Heart Lantern blazes back to life (victory).
     async function heartBloom(p) {
@@ -2241,21 +2936,27 @@
         await clock.wait(D(140));
       }
       p.lit = true;
-      snd('whoomph');
+      // A colored brazier (Chapter 2) chimes and floods its color back; gold goes whoomph.
+      const pal = p.pal;
+      snd(pal ? 'chime' : 'whoomph');
       const fp = firePos(p);
       if (!S.reduced) {
+        const flRgb = pal ? pal.rgb : '255,214,140';
+        const flCore = pal ? FX.mixRgb(pal.rgb, '255,255,255', 0.7) : '255,255,240';
         const fl = { layer: 'top', a: 1, done: false, draw(g) {
           g.globalCompositeOperation = 'lighter';
           g.globalAlpha = clamp(this.a, 0, 1);
-          g.drawImage(FX.glow('255,214,140'), fp.x - CW * 2.4, fp.y - CW * 2.4, CW * 4.8, CW * 4.8);
-          g.drawImage(FX.glow('255,255,240'), fp.x - CW * 0.7, fp.y - CW * 0.7, CW * 1.4, CW * 1.4);
+          g.drawImage(FX.glow(flRgb), fp.x - CW * 2.4, fp.y - CW * 2.4, CW * 4.8, CW * 4.8);
+          g.drawImage(FX.glow(flCore), fp.x - CW * 0.7, fp.y - CW * 0.7, CW * 1.4, CW * 1.4);
         } };
         S.fx.push(fl);
         clock.tween(D(560), (v) => { fl.a = 1 - v; }, ease.outQuad).then(() => { fl.done = true; });
+        if (pal) flashIt(pal.pale, 0.14);
       }
-      burst(fp.x, fp.y, 44, { speed: [120, 380], life: [700, 1500], size: [2.5, 5], rgb: ['255,170,60', '255,220,120', '255,130,40'],
-        ang: -Math.PI / 2, spread: 1.25, extra: { kind: 'ember', ay: 140, drag: 1.6, size1: 0.8, fadeIn: 0.02 } });
-      ringAt(p.x, p.y - CH * 0.2, CW * 0.3, CW * 2.4, '255,196,110', 640, 6);
+      burst(fp.x, fp.y, 44, { speed: [120, 380], life: [700, 1500], size: [2.5, 5], rgb: pal ? [pal.rgb, pal.pale, pal.deep] : ['255,170,60', '255,220,120', '255,130,40'],
+        ang: -Math.PI / 2, spread: 1.25, extra: { kind: 'ember', ay: 140, drag: 1.6, size1: 0.8, fadeIn: 0.02, core: pal ? pal.pale : null } });
+      if (pal) stars(fp.x, fp.y, 14, [pal.rgb, pal.pale, '255,255,255'], [80, 320]);
+      ringAt(p.x, p.y - CH * 0.2, CW * 0.3, CW * 2.4, pal ? pal.pale : '255,196,110', 640, 6);
       // The light blooms outward with easing and a little overshoot.
       await clock.tween(D(950), (v, raw) => {
         p.litAmt = v;
@@ -2287,13 +2988,17 @@
         if (t > dur * 1.3) this.done = true;
       } });
     }
+    // Eat the Light (Gloamwing) and Gobble Color (Pebblebelly): the brazier's flame streams into
+    // the boss's mouth in the flame's own color, and the dragon's belly lights up with it.
     async function eatLight(b, p) {
-      snd('eat');
+      snd(b.look.dragon ? 'gobble' : 'eat');
       const fp = firePos(p);
-      const to = chestOf(b);
+      const to = mouthOf(b);
+      const rgb = p.rgb || '255,200,100';
+      const pale = p.pal ? p.pal.pale : '255,240,190';
       faceTo(b, p.x);
-      stream(fp, to, 70, D(1100), '255,200,100', 1.6);
-      stream({ x: fp.x, y: fp.y - CH * 0.3 }, to, 26, D(1100), '255,240,190', 1.2);
+      stream(fp, to, 70, D(1100), rgb, 1.6);
+      stream({ x: fp.x, y: fp.y - CH * 0.3 }, to, 26, D(1100), pale, 1.2);
       const rib = { layer: 'top', a: 0, done: false, draw(g) {
         g.globalCompositeOperation = 'lighter';
         g.lineCap = 'round';
@@ -2301,7 +3006,7 @@
         const my = Math.min(fp.y, to.y) - CH * 0.8;
         for (const [w, al] of [[34, 0.16], [12, 0.4], [4, 0.8]]) {
           g.globalAlpha = clamp(this.a * al, 0, 1);
-          g.strokeStyle = 'rgb(255,214,130)';
+          g.strokeStyle = `rgb(${p.rgb ? pale : '255,214,130'})`;
           g.lineWidth = w;
           g.beginPath();
           g.moveTo(fp.x, fp.y);
@@ -2314,18 +3019,21 @@
       await clock.tween(D(1150), (v, raw) => {
         p.litAmt = 1 - ease.inCubic(raw);
         b.feed = Math.sin(raw * Math.PI * 0.5);
+        b.belly = raw * 0.9;
         S.darkBoost = Math.sin(raw * Math.PI) * 0.08;
       });
       p.lit = false;
       p.litAmt = 0;
       S.darkBoost = 0;
-      stars(to.x, to.y, 16, [GOLD, '255,240,200'], [60, 200]);
+      stars(to.x, to.y, 16, [p.rgb || GOLD, pale], [60, 200]);
       await clock.tween(D(420), (v, raw) => {
         b.scale = 1 + Math.sin(raw * Math.PI) * 0.08;
         b.feed = 1 - raw;
+        b.belly = (1 - raw) * 0.9;
       });
       b.scale = 1;
       b.feed = 0;
+      b.belly = 0;
     }
     P.snuff = async (e) => {
       const p = S.props.get(e.prop);
@@ -2568,22 +3276,119 @@
         case 'swoop': return undefined;
         case 'summon':
         case 'call': return u ? bossCall(u) : undefined;
+        // Chapter 2. The dragon's breaths: a big breath in here, the mist comes with the breath event.
+        case 'frost-breath':
+        case 'ember-breath':
+          if (u) {
+            await clock.tween(D(360), (v, raw) => {
+              u.scale = 1 + Math.sin(raw * Math.PI) * 0.08;
+              u.belly = Math.sin(raw * Math.PI) * 0.6;
+            });
+            u.scale = 1;
+            u.belly = 0;
+          }
+          return undefined;
+        case 'vine-yank':
+        case 'star-hop': return undefined;
+        case 'gobble-color':
+          if (u) await clock.tween(D(380), (v) => { u.feed = v * 0.6; u.belly = v * 0.4; });
+          return undefined;
+        case 'snow-globe': return snowGlobe(u, e);
+        case 'rainbow-cake': return feast(u);
+        case 'phoenix-feather': return phoenix(u, e);
+        case 'frost-crystal':
+        case 'grove-crystal':
+        case 'ember-crystal':
+        case 'star-crystal': return flourish(u, [flameRgb(crystalColor(id)) || GOLD, '255,255,240']);
         default: return flourish(u, [GOLD, '255,255,230']);
       }
     };
+    // The flame color a crystal item carries (data.items[id].color wins over the name).
+    function crystalColor(id) {
+      const it = data.items && data.items[id];
+      if (it && isColor(it.color)) return it.color;
+      return { 'frost-crystal': 'blue', 'grove-crystal': 'green', 'ember-crystal': 'red', 'star-crystal': 'violet' }[id] || null;
+    }
+    // The Snow Globe: thrown to a square, it bursts into cold mist over the squares around it.
+    async function snowGlobe(u, e) {
+      const area = Array.isArray(e.area) ? e.area.map(cellOf).filter(Boolean) : [];
+      const at = cellOf(e.at) || (area.length ? area[Math.floor(area.length / 2)] : null);
+      if (!at) return flourish(u, ['200,240,255']);
+      const center = centerOf(at[0], at[1]);
+      const cells = area.length ? area : areaAround(at[0], at[1], 1);
+      const from = u ? chestOf(u) : { x: center.x, y: -40 };
+      if (u) faceTo(u, center.x);
+      snd('throw');
+      const fx = { layer: 'top', kind: 'globe', x: from.x, y: from.y, ang: 0, a: 1, spin: 0, done: false, draw: drawShot };
+      S.fx.push(fx);
+      await clock.tween(D(460), (v, raw) => {
+        fx.x = lerp(from.x, center.x, raw);
+        fx.y = lerp(from.y, center.y, raw) - Math.sin(raw * Math.PI) * CH * 1.2;
+        fx.spin = raw * 8;
+      });
+      fx.done = true;
+      snd('freeze');
+      flashIt('200,235,255', 0.2);
+      snowPuff(center.x, center.y, 16);
+      ringAt(center.x, center.y, CW * 0.3, CW * 1.9, '180,230,255', 600, 8);
+      for (const [c, r] of cells) {
+        const p = centerOf(c, r);
+        burst(p.x, p.y, 5, { speed: [20, 90], life: [600, 1100], size: [4, 7], rgb: ['220,245,255', '255,255,255'], up: 60, jitter: CW * 0.3, spin: 3,
+          extra: { kind: 'flake', drag: 1.5, ay: 100 } });
+      }
+      fog(cells, '150,215,255', 1000);
+      await clock.wait(D(300));
+    }
+    // The Rainbow Cake: every hero gets a shower of stars in all four colors.
+    async function feast(u) {
+      snd('sparkle');
+      for (const h of S.units.values()) {
+        if (h.kind !== 'hero' || h.dying) continue;
+        const c = chestOf(h);
+        for (let i = 0; i < NCOL; i++) stars(c.x, c.y, 5, [flameRgb(COLOR_NAMES[i]) || GOLD], [40, 160]);
+      }
+      if (u) ringAt(u.x, u.y, CW * 0.3, CW * 1.4, GOLD, 600, 6);
+      await clock.wait(D(420));
+    }
+    // The Phoenix Feather: warm fire streams to the knocked-down hero, who then gets up (the up event).
+    async function phoenix(u, e) {
+      const id = e.target || (Array.isArray(e.targets) && e.targets[0]);
+      let t = id ? S.units.get(id) : null;
+      if (!t) for (const h of S.units.values()) if (h.kind === 'hero' && h.downAmt > 0.5) t = t || h;
+      snd('fire');
+      const from = u ? chestOf(u) : { x: W / 2, y: H / 2 };
+      const to = t ? { x: t.x + t.ox, y: t.y - CH * 0.6 } : from;
+      stream(from, to, 40, D(800), '255,170,60', 1.3);
+      stream(from, to, 20, D(800), '255,240,180', 1);
+      await clock.wait(D(750));
+      stars(to.x, to.y, 26, ['255,190,80', '255,120,50', '255,240,180'], [80, 300]);
+      ringAt(t ? t.x : to.x, t ? t.y : to.y, CW * 0.2, CW * 1.4, '255,170,60', 650, 7);
+      await clock.wait(D(200));
+    }
 
+    // push: a shove (Sunburst, Wing Gust), a pull (a vine reels the hero in) or a knockback (a
+    // snowball's splat sends them skidding). Chapter 1 pushes have no kind and slide as before.
     P.push = async (e) => {
       const u = S.units.get(e.uid);
       if (!u || !Array.isArray(e.path)) return;
       let path = e.path.map(cellOf).filter(Boolean);
       if (path.length && sameCell(path[0], [u.c, u.r])) path = path.slice(1);
       if (!path.length) return;
-      snd('push');
+      const kind = e.kind || 'push';
+      if (kind === 'pull') return pull(u, path, e);
+      if (kind === 'knockback') {
+        snd('snowball');
+        const c = chestOf(u);
+        snowPuff(c.x, c.y, 10);
+      } else snd('push');
+      await slide(u, path, kind === 'knockback' ? 150 : 170);
+    };
+    async function slide(u, path, ms) {
       for (const [c, r] of path) {
         const a = anchor(u.size, c, r);
         const x0 = u.x;
         const y0 = u.y;
-        await clock.tween(D(170), (v) => {
+        await clock.tween(D(ms), (v) => {
           u.x = lerp(x0, a.x, v);
           u.y = lerp(y0, a.y, v);
         }, ease.outQuad);
@@ -2592,7 +3397,64 @@
         dust(u.x, u.y, 4);
       }
       clock.tween(D(200), (v, raw) => { u.squash = Math.sin(raw * Math.PI) * 0.6; }).then(() => { u.squash = 0; });
-    };
+    }
+    // Who is pulling: the event's `by`, else the monster taking its go if it can grab, else the
+    // nearest grabber (a rooted snapper emits nothing before its pull, so `acting` may be stale).
+    function pullerOf(u, e) {
+      const by = e.by && S.units.get(e.by);
+      if (by) return by;
+      const act = S.acting && S.units.get(S.acting);
+      if (act && (act.grabby || act.boss) && !act.dying) return act;
+      let best = null;
+      for (const m of S.units.values()) {
+        if (m.kind !== 'monster' || m.dying || !(m.grabby || m.boss)) continue;
+        if (!best || Math.hypot(m.x - u.x, m.y - u.y) < Math.hypot(best.x - u.x, best.y - u.y)) best = m;
+      }
+      return best;
+    }
+    // A vine whips out from the puller to the hero, then reels them in along the path.
+    async function pull(u, path, e) {
+      const puller = pullerOf(u, e);
+      snd('grab');
+      const from = puller ? mouthOf(puller) : null;
+      const vine = { layer: 'top', ext: 0, done: false, draw(g) {
+        const end = chestOf(u);
+        const tx = lerp(from.x, end.x, this.ext);
+        const ty = lerp(from.y, end.y, this.ext);
+        // The vine sags and sways a little, so it reads as a living tendril, not a rope.
+        const mx = (from.x + tx) / 2 + Math.sin(S.t * 9 + 1) * CW * 0.14 * this.ext;
+        const my = (from.y + ty) / 2 + CH * 0.35 * this.ext + Math.cos(S.t * 7) * CH * 0.08 * this.ext;
+        g.lineCap = 'round';
+        for (const [w, col] of [[14, '#1e4a1a'], [8, '#4f9a3c'], [3, '#a6e07a']]) {
+          g.strokeStyle = col;
+          g.lineWidth = w;
+          g.beginPath();
+          g.moveTo(from.x, from.y);
+          g.quadraticCurveTo(mx, my, tx, ty);
+          g.stroke();
+        }
+        g.fillStyle = '#6fc14f';
+        for (let k = 0.25; k < this.ext; k += 0.25) {
+          const px = (1 - k) * (1 - k) * from.x + 2 * (1 - k) * k * mx + k * k * tx;
+          const py = (1 - k) * (1 - k) * from.y + 2 * (1 - k) * k * my + k * k * ty;
+          g.beginPath();
+          g.ellipse(px, py - 8, 9, 5, -0.6, 0, TAU);
+          g.fill();
+        }
+      } };
+      if (from) {
+        faceTo(puller, u.x);
+        S.fx.push(vine);
+        await clock.tween(D(260), (v) => { vine.ext = v; }, ease.outCubic);
+        setPose(puller, 'attack', 500);
+      }
+      if (from) faceTo(u, from.x);
+      await slide(u, path, 95);
+      if (from) {
+        await clock.tween(D(200), (v) => { vine.ext = 1 - v; }, ease.inQuad);
+        vine.done = true;
+      }
+    }
     P.status = async (e) => {
       const u = S.units.get(e.uid);
       if (!u || !e.status) return;
@@ -2607,6 +3469,18 @@
         const c = chestOf(u);
         burst(c.x, c.y - 20, 14, { speed: [20, 70], life: [700, 1200], size: [4, 7], rgb: ['255,230,140', '230,200,255'], up: 20,
           extra: { kind: 'glow', drag: 1.5, ay: -20 } });
+      } else if (e.status === 'frozen') {
+        // Ice grips the feet (drawn while the status lasts) with a cold puff.
+        snd('freeze');
+        const c = chestOf(u);
+        snowPuff(c.x, c.y, 8);
+        stars(c.x, c.y, 10, ['200,240,255', '255,255,255'], [40, 160]);
+        ringAt(u.x, u.y, CW * 0.15, CW * 0.8, '180,230,255', 500, 5);
+      } else if (e.status === 'chilled') {
+        snd('freeze');
+        const c = chestOf(u);
+        burst(c.x, c.y, 10, { speed: [20, 80], life: [900, 1400], size: [4, 8], rgb: ['200,240,255', '255,255,255'], up: 30, jitter: 16, spin: 3,
+          extra: { kind: 'flake', drag: 1.2, ay: 60 } });
       }
       await clock.wait(D(260));
     };
@@ -2757,13 +3631,187 @@
       const jobs = [callHook('say', e)];
       if (b && b.boss && e.move) {
         if (/eat/.test(e.move)) jobs.push(clock.tween(D(500), (v) => { b.feed = v * 0.7; }));
+        else if (/gobble/.test(e.move)) jobs.push(clock.tween(D(500), (v) => { b.feed = v * 0.7; b.belly = v * 0.4; }));
         else if (/gust/.test(e.move)) {
           b.flapFast = 1;
           jobs.push(clock.wait(D(400)));
         }
       }
+      // The dragon's aura pulses as it announces its next color (the telegraph).
+      if (b && b.boss && b.glowRgb && (e.key === 'telegraph' || isColor(e.color))) {
+        jobs.push(clock.tween(D(600), (v, raw) => { b.glowPulse = Math.sin(raw * Math.PI) * 0.8; }).then(() => { b.glowPulse = 0; }));
+      }
       await Promise.all(jobs);
     };
+
+    // ------------------------------------------------------------ Chapter 2 events
+    // A color crystal: the hero's lantern changes color with a little burst.
+    P.tint = async (e) => {
+      const u = S.units.get(e.uid);
+      if (!u || !isColor(e.color)) return;
+      const rgb = flameRgb(e.color);
+      snd('tint');
+      const lp = spot(u, ...((u.dpose && u.dpose.lantern) || u.look.lantern || [0.55, 0.5]));
+      stars(lp.x, lp.y, 18, [rgb, FX.mixRgb(rgb, '255,255,255', 0.5), '255,255,255'], [50, 220]);
+      ringAt(u.x, u.y, CW * 0.2, CW * 1.3, rgb, 650, 6);
+      clock.tween(D(700), (v, raw) => { u.lanternFlare = Math.sin(raw * Math.PI); }).then(() => { u.lanternFlare = 0; });
+      await setLantern(u, e.color, true);
+    };
+    // The boss's glow moves on to its next color.
+    P.glow = async (e) => {
+      const u = S.units.get(e.uid);
+      if (!u || !isColor(e.color)) return;
+      const rgb = flameRgb(e.color);
+      snd('glow');
+      const c = chestOf(u);
+      const g = groundOf(u);
+      stars(c.x, c.y, u.boss ? 30 : 12, [rgb, FX.mixRgb(rgb, '255,255,255', 0.5)], [80, 300]);
+      ringAt(g.x, g.y, CW * 0.5, CW * (u.boss ? 3 : 1.5), rgb, 750, 7);
+      await setGlow(u, e.color, true);
+    };
+    // Blink: sparkle out, appear somewhere else, sparkle in.
+    P.blink = async (e) => {
+      const u = S.units.get(e.uid);
+      const to = cellOf(e.to);
+      if (!u || !to) return;
+      const rgb = (u.boss && glowRgbOf(u)) || u.look.eye || '230,200,255';
+      const pale = FX.mixRgb(rgb, '255,255,255', 0.6);
+      const n = u.boss ? 30 : 16;
+      snd('blink');
+      let c = chestOf(u);
+      stars(c.x, c.y, n, [rgb, pale, '255,255,255'], [60, 240]);
+      ringAt(u.x, u.y, CW * 0.2, CW * (u.boss ? 2 : 1), rgb, 500, 5);
+      await clock.tween(D(260), (v) => {
+        u.alpha = 1 - v;
+        u.scale = 1 - 0.6 * v;
+        u.oy = -v * 18;
+      }, ease.inQuad);
+      placeUnit(u, to[0], to[1]);
+      u.oy = 0;
+      let near = null;
+      for (const h of S.units.values()) if (h.kind === 'hero' && !h.down && (!near || Math.abs(h.x - u.x) < Math.abs(near.x - u.x))) near = h;
+      if (near) faceTo(u, near.x);
+      c = chestOf(u);
+      stars(c.x, c.y, n, [rgb, pale, '255,255,255'], [60, 240]);
+      ringAt(u.x, u.y, CW * 0.2, CW * (u.boss ? 2 : 1), rgb, 500, 5);
+      await clock.tween(D(300), (v) => {
+        u.alpha = v;
+        u.scale = 0.4 + 0.6 * v;
+      }, ease.outBack);
+      u.alpha = 1;
+      u.scale = 1;
+    };
+    // A Magma Blob pops into two: a jelly burst, then the Blobbits hop out (blobHop, on their summon).
+    P.split = async (e) => {
+      const at = cellOf(e.at);
+      const o = at ? centerOf(at[0], at[1]) : S.lastDefeat ? { x: S.lastDefeat.x, y: S.lastDefeat.y } : null;
+      if (!o) return;
+      snd('split');
+      S.split = { x: o.x, y: o.y, into: new Set(Array.isArray(e.into) ? e.into : []) };
+      lavaDrops(o.x, o.y, 20);
+      ringAt(o.x, o.y + CH * 0.25, CW * 0.2, CW * 1.4, '255,150,60', 520, 7);
+      // Two little blobs squirt apart and vanish where the Blobbits will land.
+      const fx = { layer: 'top', p: 0, done: false, draw(g) {
+        const p = this.p;
+        g.globalAlpha = 1 - smoothstep(0.6, 1, p);
+        for (const side of [-1, 1]) {
+          const x = o.x + side * p * CW * 0.7;
+          const y = o.y - Math.sin(p * Math.PI) * CH * 0.6;
+          const r = 16 * (1 - p * 0.4);
+          g.fillStyle = '#ff7a3a';
+          g.strokeStyle = '#7a2a08';
+          g.lineWidth = 3;
+          g.beginPath();
+          g.ellipse(x, y, r * (1 + 0.3 * p), r * (1 - 0.2 * p), 0, 0, TAU);
+          g.fill();
+          g.stroke();
+          g.fillStyle = '#ffd27a';
+          g.beginPath();
+          g.arc(x - r * 0.3, y - r * 0.3, r * 0.3, 0, TAU);
+          g.fill();
+        }
+        g.globalAlpha = 1;
+      } };
+      S.fx.push(fx);
+      await clock.tween(D(380), (v) => { fx.p = v; }, ease.outQuad);
+      fx.done = true;
+    };
+    // Breath: colored mist rolls over the squares it covers, from the dragon's mouth outward, with
+    // snowflakes (blue), embers (red), leaves (green) or stars (violet) riding it.
+    P.breath = async (e) => {
+      const b = S.units.get(e.uid);
+      const cells = (Array.isArray(e.cells) ? e.cells : []).map(cellOf).filter((v) => v && inGrid(v[0], v[1]));
+      if (!cells.length) return;
+      const color = isColor(e.color) ? e.color : null;
+      const rgb = (color && flameRgb(color)) || '220,220,255';
+      const pale = FX.mixRgb(rgb, '255,255,255', 0.55);
+      let cx = 0;
+      let cy = 0;
+      for (const [c, r] of cells) {
+        const p = centerOf(c, r);
+        cx += p.x / cells.length;
+        cy += p.y / cells.length;
+      }
+      if (b) {
+        faceTo(b, cx);
+        await clock.tween(D(320), (v, raw) => {
+          b.scale = 1 + Math.sin(raw * Math.PI) * 0.07;
+          b.belly = Math.sin(raw * Math.PI) * 0.6;
+        });
+        b.scale = 1;
+        b.belly = 0;
+      }
+      const from = b ? mouthOf(b) : { x: cx, y: cy };
+      snd(color === 'red' ? 'fire' : 'breath');
+      shakeIt(4, 300);
+      flashIt(pale, 0.12);
+      const mist = fog(cells, rgb, 1000);
+      for (const [c, r] of cells) {
+        const p = centerOf(c, r);
+        const dx = p.x - from.x;
+        const dy = p.y - from.y;
+        for (let i = 0; i < 3; i++) {
+          parts.add({ kind: 'smoke', x: lerp(from.x, p.x, 0.25) + range(-12, 12), y: lerp(from.y, p.y, 0.25) + range(-12, 12),
+            vx: dx * 1.3 + range(-20, 20), vy: dy * 1.3 + range(-20, 20), drag: 2.4, size: range(24, 36), size1: range(44, 60),
+            rgb: pick([rgb, pale]), alpha: 0.6, life: range(900, 1400), layer: 'top', fadeIn: 0.1, fadeOut: 0.5 });
+        }
+        if (color === 'blue') {
+          burst(p.x, p.y, 2, { speed: [10, 50], life: [900, 1500], size: [4, 7], rgb: ['220,245,255', '255,255,255'], up: 20, jitter: CW * 0.3, spin: 3,
+            extra: { kind: 'flake', drag: 1.2, ay: 60 } });
+        } else if (color === 'red') {
+          burst(p.x, p.y, 3, { speed: [40, 160], life: [500, 900], size: [2.5, 4.5], rgb: ['255,180,70', '255,230,140'], jitter: CW * 0.3,
+            extra: { kind: 'ember', drag: 1.5, ay: 160, size1: 0.8 } });
+        } else if (color === 'green') {
+          burst(p.x, p.y, 2, { speed: [20, 80], life: [700, 1200], size: [5, 9], rgb: ['140,230,110', '200,255,170'], up: 40, jitter: CW * 0.3,
+            extra: { kind: 'glow', drag: 1.5, ay: 40, squash: 0.6 } });
+        } else {
+          burst(p.x, p.y, 2, { speed: [20, 80], life: [600, 1000], size: [5, 9], rgb: [rgb, pale], up: 30, jitter: CW * 0.3, extra: { kind: 'star', drag: 1.5 } });
+        }
+      }
+      await mist;
+    };
+    // A soft colored cloud over a list of squares: a fog glow per square (big enough to melt into
+    // its neighbours) with a thin additive shine, breathing a little so it reads as vapour rather
+    // than a grid. Resolves when it has faded.
+    function fog(cells, rgb, life) {
+      const tex = FX.glow(rgb);
+      const fx = { layer: 'top', a: 0, done: false, draw(g) {
+        const t = S.t;
+        for (const pass of [0, 1]) {
+          g.globalCompositeOperation = pass ? 'lighter' : 'source-over';
+          for (const [c, r] of cells) {
+            const p = centerOf(c, r);
+            const k = 1.25 + 0.1 * Math.sin(t * 5 + c * 1.3 + r * 0.7);
+            g.globalAlpha = clamp((pass ? 0.18 : 0.5) * this.a * (0.85 + 0.15 * Math.sin(t * 7 + c + r * 2)), 0, 1);
+            g.drawImage(tex, p.x - CW * k, p.y - CH * k, CW * 2 * k, CH * 2 * k);
+          }
+        }
+        g.globalAlpha = 1;
+        g.globalCompositeOperation = 'source-over';
+      } };
+      S.fx.push(fx);
+      return clock.tween(D(life), (v, raw) => { fx.a = Math.sin(raw * Math.PI); }).then(() => { fx.done = true; });
+    }
     // The darkness lifts in a wave from (cx, cy), with golden sparkles riding the edge.
     async function flood(cx, cy) {
       const maxR = Math.hypot(W, H) * 1.05;
@@ -2837,7 +3885,7 @@
     P.victory = async () => {
       clearOptions();
       snd('victory');
-      const hl = [...S.props.values()].find((p) => p.type === 'heart-lantern');
+      const hl = [...S.props.values()].find(isHeart);
       const jobs = [];
       if (hl) jobs.push(heartBloom(hl));
       [...S.props.values()].filter((p) => p.brazier && !p.lit)
@@ -2867,7 +3915,7 @@
         if (!e || !e.t || !P[e.t]) continue;
         // Remember which monster is taking its go, for its violet floor ring.
         if (e.t === 'turn') S.acting = null;
-        else if (e.uid && (e.t === 'move' || e.t === 'attack' || e.t === 'roll' || e.t === 'ability')) {
+        else if (e.uid && (e.t === 'move' || e.t === 'attack' || e.t === 'roll' || e.t === 'ability' || e.t === 'breath' || e.t === 'blink' || e.t === 'glow')) {
           const au = S.units.get(e.uid);
           S.acting = au && au.kind === 'monster' ? e.uid : null;
         }
@@ -2946,6 +3994,7 @@
       const sh = S.reduced ? { x: 0, y: 0 } : shake.offset();
       const bx = Math.round(view.ox * view.dpr);
       const by = Math.round(view.oy * view.dpr);
+      paintedOffset = { x: bx / view.dpr + sh.x * view.s, y: by / view.dpr + sh.y * view.s };
       ctx.setTransform(k, 0, 0, k, bx + sh.x * k, by + sh.y * k);
       ctx.save();
       ctx.beginPath();
@@ -2959,6 +4008,7 @@
       parts.draw(ctx, 'world', env);
       drawFx('world');
       drawDarkness();
+      drawSpottedInDark();
       drawGlow();
       drawEyes();
       drawMarkGlow();
@@ -3045,12 +4095,15 @@
       }
       return best;
     }
-    // A figure stands about 1.45 squares tall, so its head and chest are drawn over the square
-    // behind it. A tap on the figure means the figure, not that square (playtest M2).
+    // A reachable square wins over a figure leaning across it. The figure still owns its feet.
     function hit(x, y) {
       const u = unitAtPoint(x, y);
-      if (u) return { c: u.c, r: u.r, uid: u.uid };
       const cell = cellAt(x, y);
+      if (cell && S.opt && S.opt.moves.has(key(cell.c, cell.r)) &&
+          (!u || unitOn([cell.c, cell.r]) !== u)) {
+        return { c: cell.c, r: cell.r, uid: occupant(cell.c, cell.r) };
+      }
+      if (u) return { c: u.c, r: u.r, uid: u.uid };
       return cell ? { c: cell.c, r: cell.r, uid: occupant(cell.c, cell.r) } : null;
     }
     function interactive(cell) {
@@ -3170,7 +4223,8 @@
       stats() {
         return { fps: Math.round(S.fps || 0), frameMs: Math.round((S.cost || 0) * 100) / 100, particles: parts.list.length,
           units: S.units.size, props: S.props.size,
-          playing: S.playing, time: Math.round(clock.now), errored: !!S.errored };
+          playing: S.playing, time: Math.round(clock.now), errored: !!S.errored,
+          hover: S.hover, bossLabel: screenBox(bossLabelBox()), bossFigure: bossFigureScreen() };
       },
       destroy() {
         S.destroyed = true;

@@ -2,6 +2,10 @@
 //   const ui = LB_UI.create(rootEl, handlers)
 //   handlers: onNewGame, onContinue, onStart(names), onSelectHero(id), onAction(kind), onItem(item),
 //             onEndHeroTurn(), onEndPartyTurn(), onLeave(arch), onRetry(), onSettings(settings)
+// Phase 2 (chapters): ui.showChapters(chapters) -> Promise<chapterId | null>, ui.setChapter(chapter | id),
+//   ui.chapter(), ui.monsterInfo(monster), ui.traitLines(type). Without setChapter, Chapter 1 is the default
+//   and every older call works as before. updateHud(state, ctx) also reads ctx.item (the bag item being
+//   aimed), and ctx.colors / ctx.bossNext in place of LB_RULES.colors(state) / LB_RULES.bossNext(state).
 // House rules: everything visible, one tap at a time, kind words, no timers.
 (function (root) {
   'use strict';
@@ -48,6 +52,10 @@
     back: { d: 'M10 6l-6 6 6 6 M4 12h16' },
     potion: { d: 'M10 3h4 M10.5 3v5L6 15.5A4.5 4.5 0 0 0 10 21h4a4.5 4.5 0 0 0 4-5.5L13.5 8V3 M7.5 14h9' },
     users: { d: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5 M16 4.5a3.5 3.5 0 0 1 0 6.5 M18 14.8c1.9.7 3.1 2.4 3.5 5.2' },
+    // Phase 2: a snowflake (frozen), a four-leaf clover (Lucky Clover) and a crystal (the Prism Deeps).
+    snow: { d: 'M12 2.5v19 M3.8 7.25l16.4 9.5 M3.8 16.75l16.4-9.5 M9.5 4.5L12 7l2.5-2.5 M9.5 19.5L12 17l2.5 2.5 M4.2 11.2l3.4-.4 1.1-3.2 M4.2 12.8l3.4.4 1.1 3.2 M19.8 11.2l-3.4-.4-1.1-3.2 M19.8 12.8l-3.4.4-1.1 3.2' },
+    clover: { fill: true, d: 'M12 11.5c-.6-3.6 1.2-6.6 3.6-6.4 2.4.2 3.4 2.6 2 5.4 3.1-.4 5 1.6 4.6 3.9-.4 2.4-3 3.3-5.6 1.9.4 3.1-1.6 5-3.9 4.6-2.4-.4-3.3-3-1.9-5.6-3.1.4-5-1.6-4.6-3.9.4-2.4 3-3.3 5.6-1.9-.4-3.1 1.6-5 3.9-4.6z M12 12l-2 9' },
+    prism: { d: 'M12 3l7 6-7 12-7-12z M5 9h14 M12 3l-3 6 3 12 3-12z' },
   };
 
   function icon(name, extra) {
@@ -87,9 +95,62 @@
 
   function data() { return root.LB_DATA || {}; }
   function art() { return root.LB_ART || {}; }
+  function rules() { return root.LB_RULES || {}; }
+  // Words come from the chapter's own text first (Chapter 2's boss and victory lines), then the
+  // top-level text, so Chapter 1 reads exactly as before.
   function text(key, fallback) {
+    const ct = chapterOf().text || {};
+    if (ct[key] != null) return ct[key];
     const t = data().text || {};
     return t[key] != null ? t[key] : fallback;
+  }
+
+  // ---------- Chapters ----------
+  // ui.setChapter() picks the chapter whose screens and words the UI shows. Until it is called,
+  // Chapter 1 is built from the top-level data (startRoom, story, screens, text), which is why
+  // every older call keeps working unchanged.
+  const CHAPTER1 = 'deep-lanterns';
+  let curChapter = null;
+  function chapterList() { return Array.isArray(data().chapters) ? data().chapters : []; }
+  function defaultChapter() {
+    const first = chapterList()[0] || {};
+    const screens = Object.assign({ title: 'screen-title', story: ['screen-story-1', 'screen-story-2', 'screen-story-3'], map: 'screen-map' },
+      data().screens || {}, first.screens || {});
+    return Object.assign({ id: CHAPTER1, number: 1, name: 'The Deep Lanterns', subtitle: 'Relight the Deep Lanterns of Gloamhold', blurb: '',
+      startRoom: data().startRoom, story: data().story || [], music: 'explore', text: {} }, first, { screens });
+  }
+  function findChapter(ch) {
+    if (!ch) return null;
+    if (typeof ch === 'object') return ch;
+    return chapterList().find((c) => c.id === ch) || null;
+  }
+  function chapterOf() { return curChapter || defaultChapter(); }
+  function chapterNumber(ch) {
+    ch = ch || chapterOf();
+    if (ch.number) return ch.number;
+    const i = chapterList().findIndex((c) => c.id === ch.id);
+    return i < 0 ? 1 : i + 1;
+  }
+  // Chapter 2 and later get their own looks (a rainbow boss and victory); Chapter 1 keeps today's.
+  const isPrism = () => chapterNumber() > 1;
+  // The chapter's rooms: rooms carry `chapter`; rooms without one belong to Chapter 1.
+  function chapterRooms(ch) {
+    ch = ch || chapterOf();
+    const first = chapterNumber(ch) === 1;
+    return (data().rooms || []).filter((r) => (r.chapter ? r.chapter === ch.id : first));
+  }
+  function isBossRoom(room) {
+    if (!room) return false;
+    if (room.boss) return true;
+    const mon = data().monsters || {};
+    return (room.monsters || []).some((m) => (mon[m.type] || {}).boss);
+  }
+  // The chapter's boss: the boss monster standing in its boss room (Gloamwing, or Pebblebelly).
+  function bossDef(ch) {
+    const mon = data().monsters || {};
+    const room = chapterRooms(ch).find(isBossRoom);
+    const m = room && (room.monsters || []).find((x) => (mon[x.type] || {}).boss);
+    return (m && mon[m.type]) || mon.gloamwing || { id: 'gloamwing', name: 'The boss' };
   }
   function pick(list, fallback) {
     if (Array.isArray(list) && list.length) return list[Math.floor(Math.random() * list.length)];
@@ -122,9 +183,19 @@
     // ui.js may be loaded from qa/harness too; LB_UI.artBase points back at game/.
     return (LB_UI.artBase || '') + src;
   }
+  // A full-screen painting: the chapter's (screens.boss, .victory, .map, .card), else the shared
+  // top-level screens, else 'screen-<key>'.
   function screenArt(key) {
+    const cs = chapterOf().screens || {};
     const s = data().screens || {};
-    return artSrcFor(s[key] || 'screen-' + key);
+    const id = typeof cs[key] === 'string' ? cs[key] : s[key] || 'screen-' + key;
+    return artSrcFor(id);
+  }
+  // The painted panel behind story line i (0-based): the chapter's list, or Chapter 1's naming.
+  function storyArt(i) {
+    const list = (chapterOf().screens || {}).story;
+    const id = Array.isArray(list) && list[i] ? list[i] : isPrism() ? null : 'screen-story-' + (i + 1);
+    return id ? artSrcFor(id) : null;
   }
 
   // An <img> that swaps itself for a tidy placeholder if the file is missing or broken.
@@ -138,8 +209,11 @@
 
   function lootImg(id) {
     const it = itemDef(id);
-    const glyph = it.kind === 'gold' || id === 'gold' ? coinSvg() : icon(it.kind === 'heal' ? 'potion' : it.kind === 'gear' ? 'shield' : 'sparkle');
-    return imgOrPh(it.art || 'loot-' + id, it.name, '', glyph, '#4a3a8a');
+    const k = it.kind;
+    const glyph = k === 'gold' || id === 'gold' ? coinSvg()
+      : icon(k === 'heal' || k === 'feast' ? 'potion' : k === 'gear' ? 'shield' : k === 'tint' ? 'flame' : k === 'freeze' ? 'snow' : k === 'revive' ? 'feather' : 'sparkle');
+    // A color crystal's placeholder wears its color, so the bag reads right before the art lands.
+    return imgOrPh(it.art || 'loot-' + id, it.name, '', glyph, it.color ? flameDef(it.color).hex : '#4a3a8a');
   }
 
   // Where each hero's face sits in their sprite (fractions), so the round portrait finds it.
@@ -170,35 +244,57 @@
       `background-position:${(px * 100).toFixed(1)}% ${(py * 100).toFixed(1)}%"></span>`);
   }
 
-  // ---------- The painted dungeon map (screen-map, 1920 x 1080) ----------
-  // Each room's centre and half-size on the painting, as fractions (measured on the art: gate hall
-  // far left, grotto above and armory below it, crypt in the middle, then library and chamber).
-  const MAP_ROOMS = {
-    'gate-hall': { x: 0.104, y: 0.486, rx: 0.085, ry: 0.2 },
-    'mushroom-grotto': { x: 0.33, y: 0.28, rx: 0.13, ry: 0.135 },
-    'old-armory': { x: 0.308, y: 0.7, rx: 0.125, ry: 0.145 },
-    'sleeping-crypt': { x: 0.495, y: 0.49, rx: 0.08, ry: 0.15 },
-    'lantern-library': { x: 0.668, y: 0.5, rx: 0.07, ry: 0.14 },
-    'lantern-chamber': { x: 0.862, y: 0.465, rx: 0.12, ry: 0.3 },
+  // ---------- The painted dungeon maps (screen-map and screen-c2-map, 1920 x 1080) ----------
+  // Each room's centre and half-size on its painting, as fractions, measured on the art.
+  // Chapter 1: gate hall far left, grotto above and armory below it, crypt in the middle, then
+  // library and chamber. Chapter 2 (measured on screen-c2-map v1; re-measure if it is repainted):
+  // the mushroom garden far left, the ice cavern upper and the forge lower left-middle, the
+  // starglass dome in the centre, the rainbow bridge right of centre, the vault far right. Its
+  // rooms reach higher and lower than Chapter 1's, so it shows a taller slice of the painting.
+  const MAPS = {
+    'deep-lanterns': { art: 'screen-map', rooms: {
+      'gate-hall': { x: 0.104, y: 0.486, rx: 0.085, ry: 0.2 },
+      'mushroom-grotto': { x: 0.33, y: 0.28, rx: 0.13, ry: 0.135 },
+      'old-armory': { x: 0.308, y: 0.7, rx: 0.125, ry: 0.145 },
+      'sleeping-crypt': { x: 0.495, y: 0.49, rx: 0.08, ry: 0.15 },
+      'lantern-library': { x: 0.668, y: 0.5, rx: 0.07, ry: 0.14 },
+      'lantern-chamber': { x: 0.862, y: 0.465, rx: 0.12, ry: 0.3 },
+    } },
+    'prism-deeps': { art: 'screen-c2-map', crop: { x: 0.0125, y: 0.075, w: 0.975, h: 0.82 }, rooms: {
+      'greyed-garden': { x: 0.112, y: 0.49, rx: 0.094, ry: 0.194 },
+      'frostfall-cavern': { x: 0.323, y: 0.264, rx: 0.117, ry: 0.171 },
+      'ember-forge': { x: 0.313, y: 0.717, rx: 0.117, ry: 0.157 },
+      'starglass-hall': { x: 0.513, y: 0.481, rx: 0.089, ry: 0.19 },
+      'prism-bridge': { x: 0.677, y: 0.542, rx: 0.076, ry: 0.194 },
+      'color-vault': { x: 0.859, y: 0.463, rx: 0.107, ry: 0.278 },
+    } },
   };
+  // The current chapter's map: its painting id (the chapter's screens.map wins), room spots and crop.
+  function mapOf(ch) {
+    ch = ch || chapterOf();
+    const m = MAPS[ch.id];
+    if (!m) return null;
+    return Object.assign({ crop: MAP_CROP }, m, { art: (ch.screens || {}).map || m.art });
+  }
   // The part of the painting the maps show: every room, without most of the frame.
   const MAP_CROP = { x: 0.0125, y: 0.125, w: 0.975, h: 0.74 };
-  const MAP_AR = (MAP_CROP.w * 1920) / (MAP_CROP.h * 1080);
+  const mapAspect = (c) => (c.w * 1920) / (c.h * 1080);
   const DOOR_ICON = { left: 'left', center: 'up', right: 'right' };
 
   // The parchment map with markers: visited rooms glow, the current room pulses, rooms not seen
   // yet hide under parchment fog, and doorway destinations (dest: { roomId: arch }) shine cyan
   // with the same arrow as their door button. Returns '' when the painting is missing.
   function parchmentMap(opts) {
-    const src = artSrcFor('screen-map');
+    const map = mapOf();
+    const src = map && artSrcFor(map.art);
     if (!src) return '';
-    const c = MAP_CROP;
+    const c = map.crop;
     const seen = new Set(opts.visited || []);
     const dest = opts.dest || {};
     const pct = (v) => `${(v * 100).toFixed(2)}%`;
     let marks = '';
-    (data().rooms || []).forEach((room) => {
-      const r = MAP_ROOMS[room.id];
+    chapterRooms().forEach((room) => {
+      const r = map.rooms[room.id];
       if (!r) return;
       const at = `left:${pct((r.x - c.x) / c.w)};top:${pct((r.y - c.y) / c.h)}`;
       const here = room.id === opts.here;
@@ -218,7 +314,156 @@
     });
     const bg = `background-image:url('${esc(src)}');background-size:${pct(1 / c.w)} ${pct(1 / c.h)};` +
       `background-position:${pct(c.x / (1 - c.w))} ${pct(c.y / (1 - c.h))}`;
-    return `<div class="lb-pmap ${opts.cls || ''}" style="--pm-ar:${MAP_AR.toFixed(4)}"><div class="lb-pmap-art" style="${bg}"></div>${marks}</div>`;
+    return `<div class="lb-pmap ${opts.cls || ''}" style="--pm-ar:${mapAspect(c).toFixed(4)}"><div class="lb-pmap-art" style="${bg}"></div>${marks}</div>`;
+  }
+
+  // ---------- Colored flames (Chapter 2) ----------
+  // LB_DATA.flames gives each color its name, text, short HUD text and hex; these stand in until
+  // the data lands, so the chips never come up blank.
+  const FLAME_ORDER = ['blue', 'green', 'red', 'violet'];
+  const FLAME_FALLBACK = {
+    blue: { name: 'Blue flame', short: 'Slows monsters', hex: '#6ec8ff', effect: 'chill' },
+    green: { name: 'Green flame', short: 'Heals heroes', hex: '#7be07b', effect: 'grow' },
+    red: { name: 'Red flame', short: '+1 damage', hex: '#ff7a52', effect: 'ember' },
+    violet: { name: 'Violet flame', short: '+1 Defense', hex: '#c08bff', effect: 'star' },
+  };
+  function flameDef(color) {
+    const f = (data().flames || {})[color] || {};
+    return Object.assign({ id: color }, FLAME_FALLBACK[color] || { name: color, short: '', hex: '#f4c25a' }, f);
+  }
+  // What a flame does for a hero standing in it, as a tiny badge ("+1 dmg"); blue helps nobody directly.
+  function flameBadge(f) {
+    if (f.damage) return `+${f.damage} dmg`;
+    if (f.defense) return `+${f.defense} Def`;
+    if (f.heal) return `+${f.heal} heart`;
+    return { ember: '+1 dmg', star: '+1 Def', grow: '+1 heart' }[f.effect] || '';
+  }
+  // The colored light on the board: ctx.colors, else LB_RULES.colors(state) when the rules know
+  // colors, else nothing (Chapter 1 has none). grid[col][row] is a list of color names.
+  function colorGrid(state, ctx) {
+    if (ctx && ctx.colors) return ctx.colors;
+    try { if (typeof rules().colors === 'function') return rules().colors(state) || null; } catch (e) { /* older rules */ }
+    return null;
+  }
+  function colorsAt(grid, at) {
+    if (!grid || !at) return [];
+    const col = grid[at[0]];
+    return (col && col[at[1]]) || [];
+  }
+  // A brazier placement's color: on the state prop when the rules copy it, else from the room's
+  // own prop list (state prop 'p3' is the room's props[2], as nudge is looked up too).
+  function propColor(state, p, i) {
+    if (p.color) return p.color;
+    const def = (roomDef(state.roomId).props || [])[i];
+    return def && def.color ? def.color : null;
+  }
+  // The colors in this room, in flame order, each with whether its light is on right now: a
+  // colored brazier (lit or not), a tinted lantern (hero.tint or hero.status.tint), or any
+  // colored square on the board.
+  function roomFlames(state, grid) {
+    const present = {};
+    const lit = {};
+    (state.props || []).forEach((p, i) => {
+      if (p.type !== 'brazier') return;
+      const c = propColor(state, p, i);
+      if (!c) return;
+      present[c] = true;
+      if (p.lit) lit[c] = true;
+    });
+    Object.keys(state.heroes || {}).forEach((id) => {
+      const hs = state.heroes[id] || {};
+      const t = hs.tint || (hs.status && hs.status.tint);
+      if (typeof t === 'string' && t) { present[t] = true; lit[t] = true; }
+    });
+    if (grid) grid.forEach((col) => (col || []).forEach((cell) => (cell || []).forEach((c) => { present[c] = true; lit[c] = true; })));
+    const extra = Object.keys(present).filter((c) => FLAME_ORDER.indexOf(c) < 0);
+    return FLAME_ORDER.filter((c) => present[c]).concat(extra).map((c) => Object.assign(flameDef(c), { lit: !!lit[c] }));
+  }
+  // The boss's telegraph: ctx.bossNext, else LB_RULES.bossNext(state) -> { uid, color, move } or null.
+  function bossNext(state, ctx) {
+    if (ctx && ctx.bossNext !== undefined) return ctx.bossNext;
+    try { if (typeof rules().bossNext === 'function') return rules().bossNext(state) || null; } catch (e) { /* older rules */ }
+    return null;
+  }
+  // The HUD's color panel: the telegraph ("Next: Frosty Breath", in the glow color), then a chip
+  // per color in the room, grey until that color's light is on. '' when there is nothing to show.
+  function flamesHtml(state, ctx, grid) {
+    const next = bossNext(state, ctx);
+    let html = '';
+    if (next && next.move) {
+      const f = flameDef(next.color);
+      // The boss's hearts ride on the telegraph too: the board's bar sits under the message ribbon
+      // whenever Pebblebelly is at the back wall (playtest-2 M1, ux-2 #2).
+      const boss = (state.monsters || []).find((m) => m.uid === next.uid);
+      const hearts = boss && boss.maxHp
+        ? `<span class="lb-telegraph-hp">${icon('heart')}${Math.max(0, Math.ceil(boss.hp))} / ${boss.maxHp}</span>` : '';
+      // While the move plays the label says "Now:" (main.js marks the boss `acting` from its "uses ..."
+      // line until the glow moves on), so "Next: Vine Yank" never sits there while the vine pulls (polish-2).
+      const label = boss && boss.acting ? 'Now:' : 'Next:';
+      // A tap on the chip says (and reads aloud) what the move does; touch never shows the title (ux-2 #10).
+      html += `<div class="lb-telegraph" role="button" tabindex="0" style="--fl:${esc(f.hex)}" title="${esc(next.move.text || '')}"` +
+        ` data-say="${esc(next.move.name || next.move.id || '')}: ${esc(next.move.text || '')}">${icon('prism')}` +
+        `<span class="lb-telegraph-text"><small>${label}</small><b>${esc(next.move.name || next.move.id || '')}</b>${hearts}</span></div>`;
+    }
+    const flames = roomFlames(state, grid);
+    if (flames.length) {
+      html += `<div class="lb-flame-chips n${flames.length}${state.bossRoom ? ' is-boss' : ''}">` + flames.map((f) =>
+        `<span class="lb-flame${f.lit ? ' is-lit' : ''}" style="--fl:${esc(f.hex)}" title="${esc(f.name)}: ${esc(f.text || f.short || '')}">` +
+        `${icon('flame')}<span class="lb-flame-text"><b>${esc(f.name)}</b><small>${esc(f.short || '')}</small></span></span>`).join('') + '</div>';
+    }
+    return html;
+  }
+
+  // ---------- Monster habits in plain words ----------
+  // One line per trait for the monster info (main.js shows ui.monsterInfo(m) when a monster is tapped).
+  const TRAITS = {
+    shy: () => 'Shy: it likes to stay out of bright light',
+    snuffer: () => 'Snuffer: it blows out a brazier next to it',
+    'keeps-away': () => 'Keeps away: it steps back before it slings',
+    'sleepy-spores': () => 'Sleepy spores: a hit makes a hero too sleepy to move',
+    mimic: () => 'Mimic: it was only pretending to be a chest',
+    flying: () => 'Flying: it goes right over furniture',
+    boss: () => 'Boss: it does one big move every turn',
+    sneaky: () => 'Sneaky: only brazier light shows it',
+    'hit-and-run': (d) => `Hit and run: it nips, then flutters up to ${d.hitAndRun || 3} squares away`,
+    knockback: (d) => `Snowballs: a hit knocks a hero back ${d.knockback || 1} square${(d.knockback || 1) > 1 ? 's' : ''}`,
+    splits: (d) => `Splits: beat it and ${(d.splitInto && d.splitInto.count) || 2} little ones pop out`,
+    armored: (d) => `Armored: every hit does ${d.armor || 1} less damage`,
+    rooted: () => 'Rooted: it never moves',
+    grabby: (d) => `Grabby: its vines pull a hero in from ${(d.grab && d.grab.range) || 3} squares away`,
+    blink: () => 'Blink: after it attacks, it pops to a new spot',
+  };
+  const MONSTER_STATUS = { frozen: 'Frozen: it skips its next move.', chilled: 'Chilled: blue light slows it down.' };
+  function traitLines(type) {
+    const def = (data().monsters || {})[type] || {};
+    return (def.traits || []).map((t) => (TRAITS[t] ? TRAITS[t](def) : '')).filter(Boolean);
+  }
+  // "Greyling: 7 of 10 hearts. Sneaky: only brazier light shows it. Too far away to hit from here."
+  function monsterInfo(m, extra) {
+    if (!m) return '';
+    const def = (data().monsters || {})[m.type] || { name: String(m.type || 'Monster').replace(/-/g, ' ') };
+    const hp = m.hp != null && m.maxHp != null ? ` ${m.hp} of ${m.maxHp} hearts.` : '';
+    const traits = traitLines(m.type).map((l) => l + '.').join(' ');
+    const status = Object.keys(m.status || {}).filter((k) => m.status[k]).map((k) => MONSTER_STATUS[k] || '').filter(Boolean).join(' ');
+    return [`${def.name}:${hp}`, traits, status, extra || ''].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  // ---------- How bag items pick their target ----------
+  // Plain words for the bag's tooltips and the turn hint. The target comes from the item's data
+  // (hero | square | monster | self | none | downed), with its kind as the fallback.
+  const AIM = {
+    hero: 'Tap the hero to heal', square: 'Tap a glowing square to aim', monster: 'Tap a monster with a red ring',
+    downed: 'Tap a dizzy friend, anywhere in the room', self: 'Used on yourself right away', none: 'Used right away',
+  };
+  function aimOfItem(it) {
+    if (it.target && AIM[it.target]) return it.target;
+    const k = it.kind;
+    if (k === 'revive') return 'downed';
+    if (k === 'bomb' || k === 'freeze') return 'square';
+    if (k === 'zap') return 'monster';
+    if (k === 'heal') return 'hero';
+    if (k === 'gear' || k === 'tint' || k === 'lantern' || k === 'speed') return 'self';
+    return 'none';
   }
 
   // ---------- Read-aloud ----------
@@ -389,13 +634,14 @@
     return `<div class="lb-fireflies" aria-hidden="true">${out}</div>`;
   }
   // Twinkling stars pinned to the painting (the boss's wings): [x0, x1, y0, y1, count] in art %.
-  function twinkles(zones) {
+  // cls 'is-rainbow' gives each star its own hue (Pebblebelly's belly light).
+  function twinkles(zones, cls) {
     const r = (a, b) => a + Math.random() * (b - a);
     let out = '';
     for (const [x0, x1, y0, y1, n] of zones) {
       for (let i = 0; i < n; i++) {
-        out += `<i class="lb-twinkle" style="${at2(r(x0, x1).toFixed(1), r(y0, y1).toFixed(1))};` +
-          `--d:${r(2.4, 4.6).toFixed(1)}s;--dl:${r(0, 4).toFixed(1)}s;--ts:${r(0.7, 1.3).toFixed(2)}"></i>`;
+        out += `<i class="lb-twinkle${cls ? ' ' + cls : ''}" style="${at2(r(x0, x1).toFixed(1), r(y0, y1).toFixed(1))};` +
+          `--d:${r(2.4, 4.6).toFixed(1)}s;--dl:${r(0, 4).toFixed(1)}s;--ts:${r(0.7, 1.3).toFixed(2)};--hue:${r(0, 360).toFixed(0)}"></i>`;
       }
     }
     return out;
@@ -598,6 +844,9 @@
     ui.showTitle = (opts) => {
       titleOpts = Object.assign({ canContinue: false }, opts || {});
       hud.hidden = true;
+      // The title belongs to no chapter: the next adventure picks one (Continue sets it again).
+      curChapter = null;
+      rootEl.classList.remove('lb-prism');
       const beams = '<div class="lb-beams" aria-hidden="true"><i style="--x:6%;--w:13vw;--d:12s"></i>' +
         '<i style="--x:19%;--w:8vw;--d:9s;--dl:-4s"></i><i style="--x:30%;--w:16vw;--d:14s;--dl:-7s"></i></div>';
       const s = makeScreen('lb-title', screenArt('title'), 'lb-fb-title', 10, {
@@ -689,11 +938,12 @@
     // Deep! on the last line, start the adventure.
     ui.showStory = (lines) => new Promise((resolve) => {
       hud.hidden = true;
-      lines = (lines && lines.length ? lines : data().story) || [];
-      const s = makeScreen('lb-story', null, 'lb-fb-title', 10);
-      const title = screenArt('title');
+      lines = (lines && lines.length ? lines : chapterOf().story || data().story) || [];
+      const s = makeScreen('lb-story' + (isPrism() ? ' is-prism' : ''), null, 'lb-fb-title', 10);
+      // A panel that isn't painted yet shows the chapter's card painting, else the title painting.
+      const title = screenArt('card') || screenArt('title');
       const stage = h('div', 'lb-story-stage', lines.map((_, i) => {
-        const src = artSrcFor('screen-story-' + (i + 1)) || title;
+        const src = storyArt(i) || title;
         return `<div class="lb-story-panel k${i % 3}${src ? '' : ' lb-fb-title'}"${src ? ` style="background-image:url('${esc(src)}')"` : ''}></div>`;
       }).join(''));
       stage.setAttribute('aria-hidden', 'true');
@@ -773,6 +1023,7 @@
             <div class="lb-tools">${soundBtnHtml()}<button type="button" class="lb-icon-btn" data-k="settings" aria-label="Settings" title="Settings">${icon('gear')}</button></div>
           </header>
           <div class="lb-heroes"></div>
+          <div class="lb-flames" hidden aria-label="Colored flames"></div>
           <div class="lb-turn"></div>
           <div class="lb-actions"></div>
           <div class="lb-endturn"></div>
@@ -789,7 +1040,10 @@
         const b = e.target.closest('[data-hero]');
         if (b) call('onSelectHero', b.dataset.hero);
       });
-      hud.querySelector('.lb-side').addEventListener('click', (e) => {
+      hud.addEventListener('click', (e) => {
+        // The boss's telegraph chip: a tap puts the move's words in the ribbon (ux-2 #10).
+        const tg = e.target.closest('.lb-telegraph');
+        if (tg) { ui.hint(tg.dataset.say || ''); return; }
         const b = e.target.closest('[data-act]');
         if (!b) return;
         const kind = b.dataset.act;
@@ -813,7 +1067,7 @@
       return hs.name || def.name || hs.id;
     }
 
-    function heroRow(hs, state, ctx) {
+    function heroRow(hs, state, ctx, grid) {
       const def = heroDef(hs.id);
       const hp = Math.max(0, hs.hp != null ? hs.hp : def.hearts || 0);
       const max = Math.max(1, hs.maxHp || def.hearts || hp || 1);
@@ -825,24 +1079,47 @@
       // Knocked down reads as "Dizzy": a friend can help, nobody is lost (ux #5).
       const label = hs.down ? 'Dizzy' : done ? 'Done' : monstersTurn ? 'Wait' : selected ? 'Go!' : 'Ready';
       const status = Object.keys(hs.status || {}).filter((k) => hs.status[k]);
+      // A tinted lantern (a color crystal) may sit on the hero or in its status; one icon either way.
+      const tint = typeof hs.tint === 'string' ? hs.tint : typeof (hs.status || {}).tint === 'string' ? hs.status.tint : null;
+      if (tint && status.indexOf('tint') < 0) status.push('tint');
       if (hs.down) status.unshift('dizzy');
       const statusIcons = status.map((k) => {
-        const info = STATUS[k] || { icon: 'sparkle', label: k.replace(/-/g, ' ') };
-        return `<span class="lb-status-ico s-${esc(k)}" title="${esc(info.label)}">${icon(info.icon)}</span>`;
+        let info = STATUS[k] || { icon: 'sparkle', label: k.replace(/-/g, ' ') };
+        let style = '';
+        if (k === 'tint') {
+          const f = flameDef(tint || 'blue');
+          info = { icon: 'lantern', label: `${f.name}: ${f.text || f.short || 'your lantern is tinted'}` };
+          style = ` style="--fl:${esc(f.hex)}"`;
+        }
+        return `<span class="lb-status-ico s-${esc(k)}"${style} title="${esc(info.label)}">${icon(info.icon)}</span>`;
       }).join('');
       // Gear keeps working all adventure, so it shows on the card (playtest L2).
       const gear = hs.gear || {};
-      const gearIcons = [['defense', 'shield', 'Shield Charm: +1 Defense'], ['damage', 'sword', 'Sharpening Stone: +1 damage'],
-        ['move', 'boot', 'Boots of Bounding: +1 Move']].filter(([k]) => gear[k] > 0)
-        .map(([k, ic, tip]) => `<span class="lb-gear-ico" title="${esc(tip)}">${icon(ic)}</span>`).join('');
+      const gearIcons = GEAR.filter(([k]) => gear[k] > 0)
+        .map(([k, ic, tip]) => `<span class="lb-gear-ico" title="${esc(tip(gear[k]))}">${icon(ic)}</span>`).join('');
+      // Colored light under the hero's feet shows as a small badge in that color: the stat's icon
+      // (damage sword, Defense shield, heart) and "+1"; the words are in its tooltip and on the
+      // flame chips. It is written into both rows: the hearts row shows it on wide screens, the
+      // name row on 4:3 cards, where the Ready pill is hidden (style.css).
+      const badges = hs.down || !hs.at ? [] : colorsAt(grid, hs.at).map((c) => {
+        const f = flameDef(c);
+        f.badge = flameBadge(f);
+        return f;
+      }).filter((f) => f.badge);
+      const badgeHtml = badges.map((f) => {
+        const num = f.badge.split(/\s+/)[0];
+        // A sword, not a burst: at 13 px the burst read as a snowflake next to the frozen icon (ux-2 #8).
+        const ic = /dmg|damage/i.test(f.badge) ? 'sword' : /def/i.test(f.badge) ? 'shield' : 'heart';
+        return `<span class="lb-color-badge" style="--fl:${esc(f.hex)}" title="${esc(f.name)}: ${esc(f.badge)}. ${esc(f.text || f.short || '')}">${icon(ic)}<b>${esc(num)}</b></span>`;
+      }).join('');
       const who = hs.player ? `${esc(hs.player)}` : esc(def.title || '');
-      const moveUsed = hs.moved || (hs.status && hs.status.sleepy);
+      const moveUsed = hs.moved || (hs.status && (hs.status.sleepy || hs.status.frozen));
       return `<button type="button" class="${cls}" data-hero="${esc(hs.id)}" aria-pressed="${selected}"
-          aria-label="${esc(heroLabel(hs))}${hs.player ? ' (' + esc(hs.player) + ')' : ''}, ${hp} of ${max} hearts, ${label}">
+          aria-label="${esc(heroLabel(hs))}${hs.player ? ' (' + esc(hs.player) + ')' : ''}, ${hp} of ${max} hearts, ${label}${badges.map((f) => ', ' + esc(f.badge)).join('')}">
         <span class="lb-face">${portrait(hs.id)}<span class="lb-status">${statusIcons}</span>${gearIcons ? `<span class="lb-gear">${gearIcons}</span>` : ''}</span>
         <span class="lb-hero-main">
-          <span class="lb-hero-top"><span class="lb-hero-name" title="${who}">${esc(heroLabel(hs))}</span>${hs.player ? `<span class="lb-player">${esc(hs.player)}</span>` : ''}<span class="lb-hero-state">${label}</span></span>
-          <span class="lb-hearts">${icon('heart')}<span class="lb-hp-text">${hp}/${max}</span>
+          <span class="lb-hero-top"><span class="lb-hero-name" title="${who}">${esc(heroLabel(hs))}</span>${hs.player ? `<span class="lb-player">${esc(hs.player)}</span>` : ''}${badgeHtml}<span class="lb-hero-state">${label}</span></span>
+          <span class="lb-hearts">${icon('heart')}<span class="lb-hp-text">${hp}/${max}</span>${badgeHtml}
             <span class="lb-hp-bar ${hp <= max / 3 ? 'is-low' : ''}"><i style="width:${Math.round((hp / max) * 100)}%"></i></span>
             <span class="lb-pips">
               <span class="lb-pip-mini ${moveUsed ? 'is-used' : ''}" title="${moveUsed ? 'Move used' : 'Move ready'}">${icon('boot')}</span>
@@ -858,7 +1135,18 @@
       shield: { icon: 'shield', label: 'Shield Wall: extra Defense' },
       'bright-oil': { icon: 'lantern', label: 'Bright Oil: lantern shines farther' },
       feather: { icon: 'feather', label: 'Feather Charm: extra Move this turn' },
+      frozen: { icon: 'snow', label: 'Frozen: can\'t move this turn, but can still act' },
+      tint: { icon: 'lantern', label: 'Your lantern is tinted' },
     };
+    // Gear that keeps, as a badge on the portrait: [state.gear key, icon, tooltip from its amount].
+    const GEAR = [
+      ['defense', 'shield', (n) => `Shield Charm: +${n} Defense`],
+      ['damage', 'sword', (n) => `Sharpening Stone: +${n} damage`],
+      ['move', 'boot', (n) => `Boots of Bounding: +${n} Move`],
+      ['attack', 'clover', (n) => `Lucky Clover: +${n} to hit`],
+      ['hearts', 'heart', (n) => `Heart Locket: +${n} max hearts`],
+      ['light', 'lantern', (n) => `Lantern Lens: your lantern shines ${n} square${n > 1 ? 's' : ''} farther`],
+    ];
 
     const ACTIONS = {
       attack: { icon: 'sword', label: 'Attack' },
@@ -934,13 +1222,32 @@
       if (!hs) return 'Tap a hero to start their turn.';
       const nm = `<b>${esc(heroLabel(hs))}</b>${hs.player ? ` (${esc(hs.player)})` : ''}`;
       if (ctx.armed) return `${nm}: tap <b>${esc(ctx.armed)}</b> again to use it, or tap anywhere else to put it away.`;
-      if (ctx.pending) return `${nm}: tap a glowing target.`;
+      if (ctx.pending) {
+        // A bag item being aimed says how it picks its target (the Snow Globe wants a square, the
+        // Phoenix Feather a dizzy friend anywhere in the room).
+        if (ctx.pending === 'item' && ctx.item) {
+          const it = itemDef(ctx.item);
+          const aim = aimOfItem(it);
+          const how = aim === 'square' ? `tap a glowing square to aim the ${it.name}`
+            : aim === 'downed' ? `tap a dizzy friend, anywhere in the room, to use the ${it.name}`
+            : aim === 'hero' ? `tap the hero to heal with the ${it.name}`
+            : aim === 'monster' ? `tap a monster with a red ring to zap it with the ${it.name}`
+            : `tap a glowing target for the ${it.name}`;
+          return `${nm}: ${how}.`;
+        }
+        return `${nm}: tap a glowing target.`;
+      }
       if (hs.down) return `${nm} is dizzy! A friend next to ${esc(heroLabel(hs))} can tap Help up.`;
+      // Frosty Breath froze their boots: say why there are no gold squares (ux-2 #5).
+      if (hs.status && hs.status.frozen && !hs.moved && !hs.acted) return `${nm}: frozen boots! No moving, but you can still act.`;
       if (hs.moved && hs.acted) {
         // When nobody is left to go, point at the party's button instead of "pick another hero".
         return everyoneDone(state) ? '<b>Everyone is done!</b> Tap the gold <b>Monsters go</b> button.' : `${nm} is all done. Pick another hero!`;
       }
       const canMove = !hs.moved && ctx.options && ctx.options.moves && ctx.options.moves.length;
+      // A Chapter 2 room still grey: say what to do first (ux-2 #4). Chapter 1 rooms have no colored braziers.
+      const fl = roomFlames(state, null);
+      if (canMove && !hs.acted && fl.length && !fl.some((f) => f.lit)) return `${nm}: walk to a brazier and light it to bring back the colors!`;
       if (canMove && !hs.acted) return `${nm}: tap a gold square to move, or pick an action.`;
       if (canMove) return `${nm}: tap a gold square to move.`;
       return `${nm}: pick an action.`;
@@ -956,28 +1263,38 @@
       });
       const usable = {};
       ((ctx.options && ctx.options.actions) || []).forEach((a) => { if (a && a.kind === 'item') usable[a.item] = true; });
+      // The item being aimed (ctx.item while ctx.pending is 'item') gets a cyan ring, like an active button.
+      const aimingId = ctx.pending === 'item' && ctx.item && counts[ctx.item] ? ctx.item : null;
       const items = order.map((id) => {
         const it = itemDef(id);
         const use = usable[id] ? ' is-usable' : '';
-        return `<button type="button" class="lb-item${use}" data-item="${esc(id)}" title="${esc(it.name)}${it.text ? ': ' + esc(it.text) : ''}"
+        const aim = aimOfItem(it);
+        const how = use && aim !== 'none' ? ` (${AIM[aim]})` : '';
+        return `<button type="button" class="lb-item${use}${aimingId === id ? ' is-aiming' : ''}" data-item="${esc(id)}" data-aim="${esc(aim)}"
+          title="${esc(it.name)}${it.text ? ': ' + esc(it.text) : ''}${esc(how)}"
           aria-label="${esc(it.name)}, ${counts[id]}${use ? ', tap to use' : ''}">${lootImg(id)}${counts[id] > 1 ? `<b class="lb-count">${counts[id]}</b>` : ''}</button>`;
       }).join('');
       // An empty bag shows just its name and the gold: less clutter on the back wall (ux #14).
       return {
         items,
         empty: !order.length,
-        tip: Object.keys(usable).length ? 'Tap a glowing item to use it.' : '',
+        // An armed treasure (ux-2 #3) waits for its second tap; an aimed item waits for a target.
+        tip: aimingId && ctx.armed ? `Tap the ${itemDef(aimingId).name} again to use it.`
+          : aimingId ? `Aiming the ${itemDef(aimingId).name}. Tap it again to put it away.`
+          : Object.keys(usable).length ? 'Tap a glowing item to use it.' : '',
       };
     }
 
     // The dungeon map: the painted parchment map when it exists, else a tiny map of visited rooms
     // where rooms at the same distance from the start share a row.
     function mapHtml(state) {
-      const rooms = data().rooms || [];
-      if (!rooms.length || !state.roomId) return '';
+      const all = data().rooms || [];
+      if (!all.length || !state.roomId) return '';
       const painted = parchmentMap({ here: state.roomId, visited: state.visited });
       if (painted) return painted + `<span class="lb-map-label">${esc(roomDef(state.roomId).name || '')}</span>`;
-      const start = data().startRoom || rooms[0].id;
+      // The tiny fallback map covers this chapter's rooms, from the chapter's own start room.
+      const rooms = chapterRooms().length ? chapterRooms() : all;
+      const start = chapterOf().startRoom || data().startRoom || rooms[0].id;
       const depth = { [start]: 0 };
       const order = [start];
       for (let i = 0; i < order.length; i++) {
@@ -1029,6 +1346,9 @@
       last = { state, ctx };
       buildHud();
       hud.hidden = false;
+      // A saved game remembers its chapter, so the HUD follows it even before setChapter is called.
+      if (state.chapter && chapterOf().id !== state.chapter && findChapter(state.chapter)) ui.setChapter(state.chapter);
+      const grid = colorGrid(state, ctx);
       const room = roomDef(state.roomId);
       const playing = (state.status || 'playing') === 'playing';
       const turnWord = state.side === 'monsters' ? "Monsters' turn" : 'Party turn';
@@ -1039,7 +1359,7 @@
       hud.querySelector('.lb-round').textContent = playing && state.round ? `Round ${state.round}` : '';
       hud.querySelector('.lb-roomname').classList.toggle('is-room', !playing);
       hud.querySelector('.lb-heroes').innerHTML = heroIdsOf(state)
-        .map((id) => heroRow(Object.assign({ id }, state.heroes[id]), state, ctx)).join('');
+        .map((id) => heroRow(Object.assign({ id }, state.heroes[id]), state, ctx, grid)).join('');
       const turn = hud.querySelector('.lb-turn');
       const hint = turnHint(state, ctx);
       // The 4:3 dock has no header, so there the turn hint carries the round number too.
@@ -1061,6 +1381,21 @@
         mapEl.innerHTML = map;
         mapEl.classList.toggle('is-parchment', map.indexOf('lb-pmap') >= 0);
       }
+      // The color panel (the boss telegraph and the flame chips) is redrawn only when it changes,
+      // so a chip's glow never restarts on an ordinary tap. On 4:3 screens it hangs under the map.
+      const flamesEl = hud.querySelector('.lb-flames');
+      // Keep the boss row outside the scrolling party panel, which can clip fixed descendants.
+      const flameParent = state.bossRoom ? hud : hud.querySelector('.lb-side');
+      if (flamesEl.parentElement !== flameParent) {
+        flameParent.insertBefore(flamesEl, hud.querySelector(state.bossRoom ? '.lb-map' : '.lb-turn'));
+      }
+      const flames = flamesHtml(state, ctx, grid);
+      if (flamesEl.lbHtml !== flames) {
+        flamesEl.lbHtml = flames;
+        flamesEl.innerHTML = flames;
+        flamesEl.hidden = !flames;
+      }
+      if (flames) hud.style.setProperty('--map-h', (mapEl.offsetHeight || 0) + 'px');
       // A "Tap ..." hint is done once nothing is being aimed (playtest M4, ux #1).
       if (!ctx.pending && hud.querySelector('.lb-ribbon').classList.contains('is-hint')) ui.message('');
     };
@@ -1075,6 +1410,7 @@
         // Fade out, then forget the words, so an old line never comes back (playtest L1).
         r.classList.remove('is-old', 'is-new', 'is-hint');
         r.classList.add('is-empty');
+        hud.style.removeProperty('--ribbon-h');
         ribbonTimer = setTimeout(() => { if (r.classList.contains('is-empty')) r.textContent = ''; }, 400);
         return;
       }
@@ -1082,6 +1418,8 @@
       r.classList.remove('is-empty', 'is-old', 'is-new', 'is-hint');
       void r.offsetWidth; // restart the entrance animation
       r.classList.add('is-new');
+      // The flame chips hang under the ribbon, so a long line (a tapped monster's habits) pushes them down.
+      hud.style.setProperty('--ribbon-h', (r.offsetHeight || 0) + 'px');
       // Messages never vanish while they matter; they just soften after a while.
       ribbonTimer = setTimeout(() => r.classList.add('is-old'), 7000);
     };
@@ -1143,7 +1481,7 @@
       setScreen(null);
       ui.fadeIn(); // never a black (or closed) screen behind the banner
       const visited = last.state && last.state.visited ? last.state.visited.length : 0;
-      const boss = (room.monsters || []).some((m) => m.type === 'gloamwing');
+      const boss = isBossRoom(room);
       const kicker = boss ? 'The final room' : visited ? `Room ${visited} of 5` : 'A new room';
       const o = h('div', 'lb-over lb-intro');
       o.innerHTML = `<div class="lb-over-dim"></div>
@@ -1182,16 +1520,25 @@
       const dest = {};
       doors.forEach((d) => { if (d.to) dest[d.to] = d.arch; });
       const st = last.state || {};
+      const shop = summary.shop;
+      const shopWords = (data().text || {}).shop || {};
       const map = doors.length ? parchmentMap({ here: st.roomId, visited: st.visited, dest, cls: 'is-big' }) : '';
       // A slim panel low on the board, so the room blazing with light stays in view above it (ux #9):
       // the loot in one short row, then the map and the doors side by side.
       const o = h('div', 'lb-over lb-cleared');
       o.innerHTML = `<div class="lb-over-dim"></div>
-        <div class="lb-cleared-box lb-panel${map ? ' has-map' : ''}">
+        <div class="lb-cleared-box lb-panel${map ? ' has-map' : ''}${shop ? ' has-shop' : ''}">
           <div class="lb-cleared-top">
             <span class="lb-cleared-kicker">Room cleared!</span>
             <div class="lb-loot">${lootHtml || '<span class="lb-loot-none">No treasure this time, but you made it through together!</span>'}</div>
           </div>
+          ${shop ? `<section class="lb-shop" aria-label="Nibbet's Lantern Shop">
+            <div class="lb-shop-welcome"><div class="lb-shopkeeper">${imgOrPh('npc-shopkeeper', 'Nibbet, the shopkeeper', 'lb-ph-hero', icon('lantern'), '#507c62')}</div>
+              <div><h2 class="lb-h3">Nibbet's Lantern Shop</h2><p class="lb-shop-line" role="status" aria-live="polite">${esc(shopWords.greeting)}</p></div>
+              <span class="lb-shop-gold" aria-live="polite"></span></div>
+            <div class="lb-shop-stock"></div>
+            <div class="lb-shop-confirm"><span class="lb-shop-question"></span>${btn('buy', 'bag', 'Buy', 'lb-btn-gold')}${btn('shop-done', 'door', 'On we go', 'lb-btn-ghost')}</div>
+          </section>` : ''}
           <h2 class="lb-h3">${doors.length ? 'Which way next?' : 'Onward!'}</h2>
           <div class="lb-cleared-way">
             ${map ? `<div class="lb-cleared-map">${map}</div>` : ''}
@@ -1202,6 +1549,10 @@
           </div>
         </div>`;
       const choose = (arch) => {
+        if (shop) {
+          o.querySelector('.lb-shop-line').textContent = shopWords.leaving;
+          if (settings.readAloud) speak(shopWords.leaving);
+        }
         o.querySelectorAll('button').forEach((b) => { b.disabled = true; });
         [0, 260, 520, 780].forEach((t) => setTimeout(() => root.LB_AUDIO && root.LB_AUDIO.play('step'), t));
         // The lantern light closes in around the party as they walk on (a plain fade in calm motion).
@@ -1228,12 +1579,62 @@
         mark.addEventListener('mouseleave', () => b.classList.remove('is-hot'));
       });
       on(o, 'onward', () => choose(null));
+      if (shop) {
+        let selected = null;
+        const shelf = o.querySelector('.lb-shop-stock');
+        const buyButton = o.querySelector('[data-k="buy"]');
+        const say = (line) => {
+          o.querySelector('.lb-shop-line').textContent = line;
+          if (settings.readAloud) speak(line);
+        };
+        const paintShop = () => {
+          const goldNow = summary.partyGold();
+          o.querySelector('.lb-shop-gold').textContent = goldNow + ' gold';
+          shelf.innerHTML = shop.stock.map((s) => {
+            const need = Math.max(0, s.price - goldNow);
+            return `<button type="button" data-buy="${esc(s.item)}" class="lb-shop-card${selected === s.item ? ' is-selected' : ''}${need ? ' is-unaffordable' : ''}${s.sold ? ' is-sold' : ''}" aria-pressed="${selected === s.item}"${s.sold ? ' disabled' : ''}>
+              ${lootImg(s.item)}<b>${esc(itemDef(s.item).name)}</b><span>${s.price} gold</span><em class="lb-shop-desc">${esc(itemDef(s.item).text || '')}</em>${s.sold ? '<small>Sold!</small>' : need ? `<small>Need ${need} more gold</small>` : ''}</button>`;
+          }).join('');
+          const offer = shop.stock.find((s) => s.item === selected && !s.sold);
+          buyButton.hidden = !offer || offer.price > goldNow;
+          buyButton.innerHTML = `${icon('bag')}<span>Buy for ${offer ? offer.price : 0} gold</span>`;
+          // With nothing chosen, the row says how to shop (each card shows what its item does instead).
+          o.querySelector('.lb-shop-question').textContent = offer && offer.price <= goldNow ? `Buy ${itemDef(offer.item).name} for ${offer.price} gold?`
+            : shop.stock.some((s) => !s.sold) ? 'Tap an item to choose it.' : '';
+        };
+        shelf.addEventListener('click', (e) => {
+          const card = e.target.closest('[data-buy]');
+          if (!card || card.disabled) return;
+          selected = card.dataset.buy;
+          const offer = shop.stock.find((s) => s.item === selected);
+          if (offer.price > summary.partyGold()) say(shopWords.need);
+          paintShop();
+          shelf.querySelector(`[data-buy="${selected}"]`).focus({ preventScroll: true });
+        });
+        on(o, 'buy', () => {
+          if (!selected || !summary.onBuy(selected)) return;
+          selected = null;
+          paintShop();
+          say(shopWords.bought);
+          if (root.LB_AUDIO) root.LB_AUDIO.play('coin');
+          o.querySelector('[data-k="shop-done"]').focus({ preventScroll: true });
+        });
+        on(o, 'shop-done', () => {
+          selected = null;
+          paintShop();
+          say(shopWords.leaving);
+          const door = o.querySelector('[data-arch], [data-k="onward"]');
+          if (door) { door.scrollIntoView({ block: 'nearest' }); door.focus({ preventScroll: true }); }
+        });
+        paintShop();
+      }
       setOver(o);
       if (root.LB_AUDIO && (loot.length || gold)) root.LB_AUDIO.play('coin');
     });
 
     // ---------- Camp (everyone knocked down) ----------
     // Resolves when they choose to try again, and also calls handlers.onRetry(): use one, not both.
+    let campTip = 0;
     ui.showCamp = () => new Promise((resolve) => {
       const bg = screenArt('camp');
       // A quiet night outside the cave: the hanging lanterns flicker and fireflies drift.
@@ -1245,14 +1646,19 @@
       if (!bg) s.insertBefore(h('div', 'lb-camp-fire'), s.querySelector('.lb-shade'));
       const title = text('campTitle', 'Back to Camp');
       const body = text('campText', 'Everyone rests by the fire. Hearts refilled.');
+      // Chapter 2's camp offers one of Gemini's tips, a new one each visit (playtest-2 L5). Chapter 1's camp is unchanged.
+      const tips = isPrism() ? text('tips', []) : [];
+      const tip = Array.isArray(tips) && tips.length ? tips[campTip++ % tips.length] : '';
+      const words = `${title}. ${body}${tip ? ' ' + tip : ''}`;
       s.content.innerHTML = `<div class="lb-camp-box lb-panel">
           <h1 class="lb-h1">${esc(title)}</h1>
           <p class="lb-p">${esc(body)}</p>
           <p class="lb-small">Nobody is in trouble. The room is ready for another try, with fresh monsters.</p>
+          ${tip ? `<p class="lb-p">${esc(tip)}</p>` : ''}
           <div class="lb-row">${speakBtn()}${btn('retry', 'flame', 'Try the room again', 'lb-btn-gold lb-btn-big')}</div>
         </div>`;
       cornerTools(s);
-      wireSpeak(s, `${title}. ${body}`);
+      wireSpeak(s, words);
       on(s, 'retry', () => {
         hush();
         resolve();
@@ -1261,7 +1667,7 @@
         if (screen === s) screen = null;
       });
       setScreen(s);
-      if (settings.readAloud) setTimeout(() => speak(`${title}. ${body}`), 600);
+      if (settings.readAloud) setTimeout(() => speak(words), 600);
     });
 
     // ---------- Boss reveal ----------
@@ -1270,17 +1676,22 @@
     // its stolen lantern glowing (style.css .lb-boss). Everything is in by about 3 seconds.
     const BOSS_ART = '<i class="lb-boss-eye" style="left:50.1%;top:27.7%"></i><i class="lb-boss-eye" style="left:54.3%;top:29.4%"></i>' +
       lamps([[50.4, 39.6, 8, '', 0.4]]);
+    // Chapter 2's reveal (Pebblebelly) uses the chapter's painting, title and line. Its eyes and
+    // belly glow can only be measured once screen-c2-boss is painted, so until then the painting
+    // (or the placeholder) gets rainbow twinkles and a rainbow flash instead of pinned eyes.
     ui.showBossReveal = () => new Promise((resolve) => {
+      const prism = isPrism();
       const bg = screenArt('boss');
-      const s = makeScreen('lb-boss', bg, 'lb-fb-boss', 14, {
-        art: BOSS_ART + twinkles([[15, 42, 6, 58, 9], [58, 86, 8, 62, 9]]),
+      const s = makeScreen('lb-boss' + (prism ? ' is-prism' : ''), bg, prism ? 'lb-fb-prism' : 'lb-fb-boss', 14, {
+        art: prism ? twinkles([[18, 82, 12, 72, 18]], 'is-rainbow') : BOSS_ART + twinkles([[15, 42, 6, 58, 9], [58, 86, 8, 62, 9]]),
         over: '<div class="lb-boss-flash" aria-hidden="true"></div>',
       });
       const dust = s.querySelector('.lb-motes');
-      if (dust) dust.classList.add('is-violet');
+      if (dust) dust.classList.add(prism ? 'is-rainbow' : 'is-violet');
+      const boss = bossDef();
       if (!bg) {
-        const boss = (data().monsters || {}).gloamwing || {};
-        const sprite = h('div', 'lb-fb-wrap', imgOrPh(boss.art || 'boss-gloamwing', 'Gloamwing', 'lb-fb-sprite', icon('moon'), '#4a2775'));
+        const sprite = h('div', 'lb-fb-wrap', imgOrPh(boss.art || 'boss-' + (boss.id || 'gloamwing'), boss.name || '', 'lb-fb-sprite',
+          icon(prism ? 'prism' : 'moon'), prism ? '#5a3f8a' : '#4a2775'));
         const img = sprite.firstElementChild;
         if (img) img.classList.add('lb-fb-sprite');
         s.insertBefore(sprite, s.querySelector('.lb-shade'));
@@ -1290,13 +1701,17 @@
       const parts = title.split(',');
       const epithet = parts.slice(1).join(',').trim();
       const line = text('bossLine', 'The giant moth spreads its starry wings. It is hungry for light!');
+      // "Face the Lantern-Eater!" / "Face the Color Gobbler!": the epithet in sentence case.
+      const face = epithet
+        ? 'Face ' + epithet.toLowerCase().replace(/(^|[\s-])(\w)/g, (m, p, c) => p + c.toUpperCase()).replace(/^The\b/, 'the') + '!'
+        : `Face ${boss.name || 'the boss'}!`;
       // The name is the big card; "The Lantern-Eater" sits under it, small and gold, so the
       // moth's face and the stolen lantern stay in view above the words.
       s.content.innerHTML = `
         <div class="lb-boss-title"><span class="lb-boss-name">${esc(parts[0].trim())}</span>` +
           `${epithet ? `<span class="lb-boss-epithet">${esc(epithet)}</span>` : ''}</div>
         <p class="lb-boss-line">${esc(line)}</p>
-        <div class="lb-row">${speakBtn()}${btn('fight', 'lantern', 'Face the Lantern-Eater!', 'lb-btn-gold lb-btn-big')}</div>`;
+        <div class="lb-row">${speakBtn()}${btn('fight', prism ? 'prism' : 'lantern', face, 'lb-btn-gold lb-btn-big')}</div>`;
       wireSpeak(s, `${title}. ${line}`);
       on(s, 'fight', () => {
         hush();
@@ -1318,13 +1733,25 @@
     ui.showVictory = (stats) => {
       stats = stats || {};
       hush();
+      const prism = isPrism();
       const bg = screenArt('victory');
-      const s = makeScreen('lb-victory', bg, 'lb-fb-victory', 22, {
-        art: VICTORY_ART,
-        over: sparkBursts([[31, 13, 0.7], [69, 9, 2.3, 'warm'], [22, 27, 3.9, 'warm'], [79, 24, 5.3]]),
+      // Chapter 1's rays and lamps are measured on its painting. Chapter 2's Prism Crystal is
+      // taken to be top centre (an estimate until screen-c2-victory is painted), with rainbow
+      // rays and bursts in the four flame colors.
+      const s = makeScreen('lb-victory' + (prism ? ' is-prism' : ''), bg, prism ? 'lb-fb-prism-victory' : 'lb-fb-victory', 22, {
+        art: prism ? '<div class="lb-rays is-rainbow" style="left:50%;top:38%"></div>' : VICTORY_ART,
+        over: sparkBursts(prism
+          ? [[31, 13, 0.7, 'blue'], [69, 9, 2.3, 'red'], [22, 27, 3.9, 'green'], [79, 24, 5.3, 'violet']]
+          : [[31, 13, 0.7], [69, 9, 2.3, 'warm'], [22, 27, 3.9, 'warm'], [79, 24, 5.3]]),
       });
+      if (prism) {
+        const dust = s.querySelector('.lb-motes');
+        if (dust) dust.classList.add('is-rainbow');
+      }
       if (!bg) {
-        const lantern = h('div', 'lb-fb-wrap', imgOrPh('prop-heart-lantern', 'The Heart Lantern', 'lb-fb-sprite', icon('lantern'), '#b9771f'));
+        const lantern = h('div', 'lb-fb-wrap', prism
+          ? imgOrPh('prop-prism-heart', 'The Prism Crystal', 'lb-fb-sprite', icon('prism'), '#7a4aa8')
+          : imgOrPh('prop-heart-lantern', 'The Heart Lantern', 'lb-fb-sprite', icon('lantern'), '#b9771f'));
         if (lantern.firstElementChild) lantern.firstElementChild.classList.add('lb-fb-sprite');
         s.insertBefore(lantern, s.querySelector('.lb-shade'));
       }
@@ -1462,6 +1889,80 @@
     // ---------- Small extras for main.js ----------
     ui.clearScreens = () => { setScreen(null); };
 
+    // ---------- Chapters (Phase 2) ----------
+    // Which chapter's screens and words the UI shows: a chapter object or id from LB_DATA.chapters
+    // (null, or an unknown id, means Chapter 1). Call it once a chapter is chosen or a save is
+    // loaded; updateHud also follows state.chapter by itself. Returns the chapter in use.
+    ui.setChapter = (ch) => {
+      curChapter = findChapter(ch);
+      rootEl.classList.toggle('lb-prism', isPrism());
+      return chapterOf();
+    };
+    ui.chapter = () => chapterOf();
+    ui.monsterInfo = monsterInfo;
+    ui.traitLines = traitLines;
+
+    // New Adventure: one big painted card per chapter (its card art, name, subtitle, blurb and a
+    // Start button; a later chapter says "Best after Chapter N"). Resolves with the chosen
+    // chapter id (and sets it), or null when Back returns to the title. With fewer than two
+    // chapters there is nothing to choose, so it resolves at once with the only one.
+    ui.showChapters = (chapters) => new Promise((resolve) => {
+      const list = (Array.isArray(chapters) && chapters.length ? chapters : chapterList()).slice();
+      if (list.length < 2) {
+        resolve((list[0] || defaultChapter()).id);
+        return;
+      }
+      hud.hidden = true;
+      const titleArt = artSrcFor((data().screens || {}).title || 'screen-title');
+      const s = makeScreen('lb-chapters', titleArt, 'lb-fb-title', 0);
+      const cards = list.map((ch, i) => {
+        const n = ch.number || i + 1;
+        const later = n > 1;
+        const artId = (ch.screens || {}).card || (later ? null : (data().screens || {}).title || 'screen-title');
+        const ph = `<span class="lb-chapter-ph">${icon(later ? 'prism' : 'lantern')}</span>`;
+        return `<article class="lb-chapter lb-panel${later ? ' is-prism' : ''}" style="--i:${i}">
+          <div class="lb-chapter-art">${imgOrPh(artId, ch.name || '', 'lb-ph-chapter', ph, later ? '#3a2a6e' : '#2a2460')}</div>
+          <div class="lb-chapter-body">
+            <span class="lb-kicker">Chapter ${n}</span>
+            <h2 class="lb-chapter-name">${esc(ch.name || `Chapter ${n}`)}</h2>
+            ${ch.subtitle ? `<p class="lb-chapter-sub">${esc(ch.subtitle)}</p>` : ''}
+            <p class="lb-chapter-blurb">${esc(ch.blurb || '')}</p>
+            <div class="lb-chapter-foot">
+              ${later ? `<span class="lb-chapter-note">${icon('star')}<span>Best after Chapter ${n - 1}</span></span>` : ''}
+              <button type="button" class="lb-btn lb-btn-gold lb-btn-big" data-k="start" data-chapter="${esc(ch.id)}">${icon('play')}<span>Start Chapter ${n}</span></button>
+            </div>
+          </div>
+        </article>`;
+      }).join('');
+      s.content.innerHTML = `
+        <div class="lb-party-head"><h1 class="lb-h1">Choose your adventure</h1>
+          <p class="lb-small">Both chapters are open. Tap Start on the one you want to play.</p></div>
+        <div class="lb-chapter-cards">${cards}</div>
+        <div class="lb-party-foot">${btn('back', 'back', 'Back', 'lb-btn-ghost')}${speakBtn('Read the chapters')}</div>`;
+      cornerTools(s);
+      // Read aloud says what the card shows, including "Best after Chapter 1" (polish-2).
+      wireSpeak(s, list.map((ch, i) => {
+        const n = ch.number || i + 1;
+        return `Chapter ${n}: ${ch.name || ''}. ${ch.subtitle || ''}. ${ch.blurb || ''}${n > 1 ? ` Best after Chapter ${n - 1}.` : ''}`;
+      }).join(' '));
+      let picked = false;
+      on(s, 'back', () => {
+        if (picked) return;
+        picked = true;
+        resolve(null);
+        ui.showTitle(titleOpts);
+      });
+      on(s, 'start', (e) => {
+        if (picked) return;
+        picked = true;
+        hush();
+        const id = e.currentTarget.dataset.chapter;
+        ui.setChapter(id);
+        resolve(id);
+      });
+      setScreen(s);
+    });
+
     // ---------- Transitions and celebrations (polish pass) ----------
     // A transition's centre: a viewport point { x, y } in CSS px, or the fallback.
     const centre = (p, fx, fy) => (p && isFinite(p.x) && isFinite(p.y) ? [`${Math.round(p.x)}px`, `${Math.round(p.y)}px`] : [fx, fy]);
@@ -1583,6 +2084,6 @@
     return ui;
   }
 
-  const LB_UI = { create, icon, speak, artBase: '' };
+  const LB_UI = { create, icon, speak, monsterInfo, traitLines, artBase: '' };
   root.LB_UI = LB_UI;
 })(typeof self !== 'undefined' ? self : this);

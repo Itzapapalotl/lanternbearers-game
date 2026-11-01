@@ -183,13 +183,66 @@
     click() {
       tone({ freq: 900, to: 650, dur: 0.05, gain: 0.12, type: 'sine' });
     },
+
+    // ---------- Phase 2: the Prism Deeps ----------
+    // Color floods back into a room: three bright bells climbing, with a soft shimmer on top.
+    chime() {
+      [NOTE.E6, NOTE.G6, NOTE.C6 * 2].forEach((f, i) => {
+        tone({ at: i * 0.09, freq: f, dur: 0.9, gain: 0.16, type: 'sine', attack: 0.006 });
+        tone({ at: i * 0.09, freq: f * 2.76, dur: 0.35, gain: 0.03, type: 'sine' });
+      });
+      noise({ at: 0.1, dur: 0.7, freq: 9000, filter: 'highpass', gain: 0.05, attack: 0.15 });
+    },
+    // Frozen feet or a Snow Globe: an icy crackle and a falling glassy tinkle.
+    freeze() {
+      noise({ dur: 0.25, freq: 5200, q: 2.5, gain: 0.28, attack: 0.004 });
+      [2200, 1760, 1320, 990].forEach((f, i) => tone({ at: 0.04 + i * 0.07, freq: f, dur: 0.45, gain: 0.1, type: 'triangle' }));
+      tone({ at: 0.02, freq: 420, to: 180, dur: 0.3, gain: 0.25, type: 'sine', lowpass: 900 });
+    },
+    // A Magma Blob splitting: two wet plops, the second a little higher and smaller.
+    split() {
+      tone({ freq: 320, to: 110, dur: 0.16, gain: 0.55, type: 'sine' });
+      noise({ dur: 0.08, freq: 600, filter: 'lowpass', gain: 0.3 });
+      tone({ at: 0.17, freq: 420, to: 150, dur: 0.14, gain: 0.42, type: 'sine' });
+      noise({ at: 0.17, dur: 0.07, freq: 800, filter: 'lowpass', gain: 0.22 });
+    },
+    // The Clanker's armor: a metal clang with a ringing overtone and a dull thud under it.
+    clank() {
+      tone({ freq: 1870, to: 1700, dur: 0.5, gain: 0.22, type: 'square', lowpass: 3200, attack: 0.002 });
+      tone({ freq: 2660, dur: 0.3, gain: 0.08, type: 'triangle' });
+      noise({ dur: 0.06, freq: 3000, q: 1.2, gain: 0.5 });
+      tone({ freq: 130, to: 60, dur: 0.18, gain: 0.5, type: 'sine' });
+    },
+    // A Starwisp blinking away: a rising pop and a sprinkle of sparkle.
+    blink() {
+      tone({ freq: 520, to: 2100, dur: 0.16, gain: 0.3, type: 'sine', attack: 0.004 });
+      tone({ at: 0.12, freq: 2600, dur: 0.3, gain: 0.08, type: 'triangle' });
+      noise({ at: 0.08, dur: 0.3, freq: 8000, filter: 'highpass', gain: 0.07 });
+    },
+    // A vine yanking a hero in: a stretchy twang that swoops down, then snaps back up.
+    grab() {
+      tone({ freq: 360, to: 120, dur: 0.22, gain: 0.4, type: 'sawtooth', lowpass: 1400, attack: 0.01 });
+      tone({ at: 0.2, freq: 140, to: 620, dur: 0.14, gain: 0.35, type: 'triangle' });
+      noise({ at: 0.3, dur: 0.05, freq: 1800, q: 1.5, gain: 0.3 });
+    },
+    // A snowball landing: a soft fwump with a powdery hiss.
+    snowball() {
+      noise({ dur: 0.18, freq: 320, filter: 'lowpass', gain: 0.6, attack: 0.006 });
+      tone({ freq: 170, to: 55, dur: 0.2, gain: 0.5, type: 'sine' });
+      noise({ at: 0.05, dur: 0.3, freq: 6000, filter: 'highpass', gain: 0.07, attack: 0.03 });
+    },
   };
 
-  // Friendly aliases, so callers can use the words from DESIGN.md.
+  // Friendly aliases, so callers can use the words from DESIGN.md and the Phase 2 event names.
+  // Anything not listed here or in SOUNDS stays silent, so a new board sound never breaks the game.
   const ALIAS = {
-    roll: 'dice', clatter: 'dice', thud: 'hit', critical: 'crit', chime: 'crit', whoosh: 'miss',
+    roll: 'dice', clatter: 'dice', thud: 'hit', critical: 'crit', whoosh: 'miss',
     gold: 'coin', jingle: 'coin', light: 'brazier', whoomph: 'brazier', footstep: 'step', footsteps: 'step',
     tap: 'click', shimmer: 'heal', mend: 'heal', thump: 'down', rumble: 'boss', fanfare: 'victory',
+    // Phase 2
+    colorBack: 'chime', tint: 'chime', glow: 'chime', telegraph: 'chime', frozen: 'freeze', frost: 'freeze', chilled: 'freeze',
+    knockback: 'snowball', pull: 'grab', yank: 'grab', armored: 'clank', clang: 'clank', teleport: 'blink',
+    breath: 'miss', gobble: 'boss',
   };
 
   function play(name) {
@@ -271,6 +324,16 @@
         const pool = tones(lift(r + 24, 60), q);
         pluck(p, pool[[0, 1, 2, 3, 4, 3, 2, 1][s]], t, 0.07, 1.2);
         if (s === 0) bell(p, pool[3] + 12, t, 0.04);
+      } },
+    // Chapter 2, the Prism Deeps: brighter and sparklier than explore. A climbing arpeggio over
+    // major chords, with high bells that come out as the colors come back (musicLight).
+    prism: { bpm: 72, hold: 2, cutoff: 900, lit: 2600, pad: 0.03, bass: 0.13,
+      chords: [[36, MAJ], [41, MAJ], [33, MIN], [43, MAJ]],
+      play(p, s, t, r, q, bar) {
+        const pool = tones(lift(r + 24, 60) + (light > 0.6 ? 12 : 0), q);
+        if (s % 2 === 0 || light > 0.4) pluck(p, pool[[0, 2, 4, 6, 7, 5, 3, 1][s]], t, 0.055 + light * 0.025, 1.8);
+        if (s === 0 && bar % 2 === 0) bell(p, pool[4] + 12, t, 0.03 + light * 0.02);
+        if (s === 6 && light > 0.5 && Math.random() < 0.6) bell(p, pool[7] + 12, t, 0.02);
       } },
   };
 
@@ -457,7 +520,8 @@
     try { if (wanted && ctx && ctx.state === 'running') startMood(wanted); } catch (e) { /* ignore */ }
   }
 
-  // Ask for a mood: 'title', 'explore', 'boss', 'camp' or 'victory'. It starts at the first tap.
+  // Ask for a mood: 'title', 'explore', 'prism' (Chapter 2 rooms), 'boss', 'camp' or 'victory'.
+  // It starts at the first tap. An unknown mood is ignored, so a chapter's `music` can't break anything.
   function music(mood) {
     if (!MOODS[mood]) return;
     wanted = mood;

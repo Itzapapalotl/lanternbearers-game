@@ -31,10 +31,11 @@
   /* Wide screens: the HUD is a column on the right. */
   --side: clamp(300px, calc(100vw - 150vh), 440px);
   --dock: 0px;
-  --bw: min(calc(100vw - var(--side)), 150vh);
+  --boss-strip: 0px;
+  --bw: min(calc(100vw - var(--side)), calc((100vh - var(--boss-strip)) * 1.5));
   --bh: calc(var(--bw) / 1.5);
   --bx: calc((100vw - var(--side) - var(--bw)) / 2);
-  --by: calc((100vh - var(--bh)) / 2);
+  --by: calc(var(--boss-strip) + (100vh - var(--boss-strip) - var(--bh)) / 2);
 }
 
 /* Squarer screens (a 4:3 tablet): the HUD docks along the bottom instead. */
@@ -42,10 +43,10 @@
   :root {
     --side: 0px;
     --dock: clamp(160px, calc(100vh - 66.667vw), 260px);
-    --bw: min(100vw, calc((100vh - var(--dock)) * 1.5));
+    --bw: min(100vw, calc((100vh - var(--dock) - var(--boss-strip)) * 1.5));
     --bh: calc(var(--bw) / 1.5);
     --bx: calc((100vw - var(--bw)) / 2);
-    --by: calc((100vh - var(--dock) - var(--bh)) / 2);
+    --by: calc(var(--boss-strip) + (100vh - var(--dock) - var(--boss-strip) - var(--bh)) / 2);
   }
 }
 
@@ -502,6 +503,9 @@ img { -webkit-user-drag: none; }
    it stays crisp (the banner's own dim covers it). The ribbon steps aside for the banner. */
 .lb-busy .lb-side > :not(.lb-bag) { opacity: 0.5; transition: opacity 0.3s ease; }
 .lb-busy .lb-hud .lb-ribbon { opacity: 0; transform: translate(-50%, -10px); animation: none; }
+/* .lb-flames is display: contents, so the dim above never reaches its children: the chips and the
+   telegraph step aside for a room banner (ux-2 #6). */
+.lb-busy .lb-flame-chips, .lb-busy .lb-telegraph { visibility: hidden; }
 /* While the board plays a move (main.js adds lb-anim) the controls rest; they only dim if it takes a while. */
 .lb-anim .lb-side { pointer-events: none; }
 .lb-anim .lb-actions, .lb-anim .lb-endturn, .lb-anim .lb-bag-items { opacity: 0.55; transition: opacity 0.2s ease 0.35s; }
@@ -581,13 +585,20 @@ img { -webkit-user-drag: none; }
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .lb-turn-round { display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px; background: rgba(244, 194, 90, 0.2); color: var(--gold-2); font-weight: 700; }
   .lb-turn.is-monsters .lb-turn-round { background: rgba(169, 133, 255, 0.25); color: #e3d2ff; }
+  /* Chapter 2's three-button row (Shield Wall, Attack, "Rowan is done") leaves the hint only ~200 px,
+     so its longer lines were cut at two. It gets a third line, a hair smaller type, a snugger Round pill,
+     and Shield Wall's second line shrinks a little to give it room (polish-2). Chapter 1's dock is unchanged. */
+  .lb-prism .lb-turn { padding: 3px 8px; font-size: 15px; line-height: 1.18; -webkit-line-clamp: 3; }
+  .lb-prism .lb-turn-round { margin-right: 4px; padding: 0 6px; }
+  .lb-prism .lb-actions .lb-btn .lb-act-sub { font-size: 14px; }
   /* The dice tray rolls over the bottom dock, in one row; the dock rests underneath. */
   /* Centred with auto margins, not a transform, so a critical hit's shake doesn't throw it sideways. */
   .lb-tray { top: auto; left: 8px; right: 8px; bottom: 7px; width: fit-content; max-width: calc(100vw - 16px); margin: 0 auto; height: calc(var(--dock) - 14px);
     flex-direction: row; align-items: center; gap: 18px; padding: 8px 24px; transform: translateY(14px); --dz-size: calc(var(--dock) - 64px); }
   .lb-tray.dz-show { transform: none; }
   .lb-tray.is-small { --dz-size: calc(var(--dock) - 74px); }
-  .lb-dice-up .lb-side > :not(.lb-bag) { visibility: hidden; }
+  /* The chips and the telegraph hang on the board, not under the tray, so they stay up while a die rolls (playtest-2 L1). */
+  .lb-dice-up .lb-side > :not(.lb-bag):not(.lb-flames) { visibility: hidden; }
   .lb-side-head { grid-area: tools; min-height: 0; justify-content: flex-end; }
   .lb-heroes { grid-area: heroes; flex-direction: row; gap: 6px; min-width: 0; }
   .lb-hero { flex: 1 1 0; min-width: 0; min-height: 60px; padding: 4px 6px 4px 4px; gap: 6px; }
@@ -832,6 +843,39 @@ img { -webkit-user-drag: none; }
 /* With the map, the doors stack beside it. */
 .lb-cleared-box.has-map .lb-doors { flex-direction: column; gap: 10px; }
 .lb-cleared-box.has-map .lb-door { min-height: 76px; min-width: 250px; }
+/* A shelf between the treasure and the doors. The confirmation has its own steady row. */
+.lb-cleared-box.has-shop { width: 900px; padding: 12px 16px; gap: 6px; }
+.has-shop .lb-loot-item img, .has-shop .lb-loot-item .lb-ph { width: 28px; height: 28px; }
+.has-shop .lb-loot-item span { font-size: 14px; }
+.lb-shop { width: 100%; padding: 10px 12px; border: 1px solid var(--panel-edge); border-radius: 12px; background: rgba(9, 8, 24, 0.4); }
+.lb-shop-welcome { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 12px; text-align: left; }
+.lb-shopkeeper, .lb-shopkeeper img, .lb-shopkeeper .lb-ph { width: 56px; height: 56px; object-fit: contain; }
+.lb-shopkeeper .lb-ph { display: grid; place-items: center; border-radius: 50%; }
+.lb-shopkeeper .lb-ico { width: 36px; height: 36px; }
+.lb-shop-line { margin: 3px 0 0; font-size: 15px; line-height: 1.3; min-height: 39px; }
+.lb-shop-gold { color: var(--gold-2); font-size: 20px; font-weight: 700; white-space: nowrap; }
+.lb-shop-stock { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+.lb-shop-card { display: grid; grid-template-columns: 48px 1fr; align-content: center; align-items: center; gap: 3px 8px; min-height: 104px; padding: 8px; color: var(--cream); background: var(--panel-bg); border: 2px solid var(--slate); border-radius: 12px; text-align: left; cursor: pointer; transition: transform 0.18s ease, border-color 0.18s ease; }
+.lb-shop-card img, .lb-shop-card .lb-ph { grid-row: 1 / span 4; align-self: start; width: 48px; height: 60px; object-fit: contain; }
+/* What the item does, so a first playthrough knows before buying. */
+.lb-shop-desc { font-style: normal; font-size: 13px; line-height: 1.25; color: var(--cream-dim); }
+.lb-shop-card b { font-size: 16px; line-height: 1.15; }
+.lb-shop-card span { font-size: 15px; color: var(--gold-2); }
+.lb-shop-card small { font-size: 13px; line-height: 1.2; }
+.lb-shop-card.is-selected { transform: translateY(-4px); border-color: var(--gold-2); box-shadow: 0 0 12px rgba(244, 194, 90, 0.3); }
+.lb-shop-card.is-unaffordable { opacity: 0.64; }
+.lb-shop-card.is-sold { opacity: 0.7; cursor: default; }
+.lb-shop-card.is-sold small { color: var(--green); font-weight: 700; }
+.lb-shop-confirm { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-height: 48px; margin-top: 8px; }
+.lb-shop-question { margin-right: auto; font-size: 15px; text-align: left; }
+.lb-shop-confirm .lb-btn { min-height: 44px; padding: 6px 12px; font-size: 16px; flex: none; }
+.has-shop .lb-cleared-map { width: 290px; }
+.has-shop .lb-pmap .pm-name { display: none; } /* The full destination names are on the adjacent doors. */
+.has-shop .lb-pmap .pm-dest { width: 44px; height: 44px; }
+.lb-cleared-box.has-shop .lb-door { min-height: 58px; }
+.has-shop .lb-door-name { font-size: 22px; }
+.has-shop .lb-door-side { font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .lb-shop-card { transition: none; } }
 .lb-fade { position: fixed; inset: 0; z-index: 60; background: #000; pointer-events: none; opacity: 0; transition: opacity 0.6s ease; }
 .lb-fade.is-on { opacity: 1; pointer-events: auto; }
 
@@ -1410,3 +1454,243 @@ img { -webkit-user-drag: none; }
 .lb-calm .lb-victory .lb-bg, .lb-calm .lb-victory .lb-art { animation: none; }
 .lb-calm .lb-victory-box, .lb-calm .lb-victory .lb-hero-chip, .lb-calm .lb-victory .lb-tile-stat, .lb-calm .lb-victory .lb-row, .lb-calm .lb-victory .lb-helps,
 .lb-calm .lb-boss-name, .lb-calm .lb-boss-epithet, .lb-calm .lb-boss-line, .lb-calm .lb-boss .lb-row { animation-delay: 0s; }
+
+/* =====================================================================================
+   Phase 2 (2026-10-30): Chapter 2, "The Prism Deeps". The chapter choice, the colored flame
+   chips and the boss telegraph, hero color badges, new gear and statuses, bag aiming, and
+   rainbow looks for Chapter 2's boss reveal and victory. Chapter 1's screens are untouched.
+   ===================================================================================== */
+
+/* ---------- Chapter choice: two big painted cards ---------- */
+.lb-chapters .lb-bg { filter: blur(6px) brightness(0.45) saturate(0.9); }
+.lb-chapters .lb-shade { background: radial-gradient(ellipse at 50% 40%, rgba(16, 14, 42, 0.3), rgba(9, 8, 24, 0.85)); }
+.lb-chapters .lb-content { gap: 14px; max-height: 100%; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; }
+.lb-chapters .lb-party-head { animation: lb-fade-up 0.6s ease both; }
+.lb-chapters .lb-party-foot { animation: lb-fade-up 0.6s ease 0.3s both; }
+.lb-chapter-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; width: min(1100px, 100%); }
+.lb-chapter { display: flex; flex-direction: column; gap: 12px; padding: 12px 12px 16px; min-width: 0; animation: lb-card-in 0.6s cubic-bezier(.2, .9, .3, 1.15) calc(var(--i, 0) * 0.1s) both; }
+.lb-chapter-art { position: relative; height: clamp(150px, 30vh, 320px); border-radius: 12px; overflow: hidden; background: radial-gradient(ellipse at 50% 40%, #2c2768, #120f30 75%); box-shadow: inset 0 0 0 1px rgba(244, 194, 90, 0.25); }
+.lb-chapter-art img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%; transition: transform 0.4s ease; }
+.lb-chapter:hover .lb-chapter-art img { transform: scale(1.03); }
+/* A card without its painting yet: a lantern glow for Chapter 1, the four flames for Chapter 2. */
+.lb-chapter-art .lb-ph-chapter { position: absolute; inset: 0; border-radius: 12px; background: radial-gradient(ellipse at 50% 80%, rgba(244, 194, 90, 0.45), transparent 55%), linear-gradient(180deg, #0d0b2a, #2a2460); }
+.lb-chapter.is-prism .lb-chapter-art .lb-ph-chapter { background:
+  radial-gradient(circle at 18% 70%, rgba(110, 200, 255, 0.55), transparent 32%), radial-gradient(circle at 40% 78%, rgba(123, 224, 123, 0.5), transparent 30%),
+  radial-gradient(circle at 62% 76%, rgba(255, 122, 82, 0.5), transparent 30%), radial-gradient(circle at 84% 68%, rgba(192, 139, 255, 0.55), transparent 32%),
+  linear-gradient(180deg, #0d0b2a, #2a1f4d 70%, #3a2a6e); }
+.lb-chapter-ph .lb-ico { width: 28%; height: 28%; color: rgba(255, 255, 255, 0.85); filter: drop-shadow(0 0 18px rgba(255, 255, 255, 0.5)); }
+.lb-chapter-body { display: flex; flex-direction: column; gap: 6px; padding: 0 6px; flex: 1; }
+.lb-chapter .lb-kicker { font-size: 16px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--cyan); }
+.lb-chapter.is-prism .lb-kicker { color: #d9b3ff; }
+.lb-chapter-name { margin: 0; font-family: var(--font-head); font-weight: 600; font-size: clamp(28px, 2.6vw, 40px); line-height: 1.05; color: var(--gold-2); text-shadow: 0 2px 0 #4b2b06, 0 0 18px rgba(244, 194, 90, 0.45); }
+.lb-chapter.is-prism .lb-chapter-name { background: linear-gradient(90deg, #a8e0ff, #b7f5b5 35%, #ffd27a 55%, #ffb088 75%, #e0c4ff); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; filter: drop-shadow(0 2px 0 #2a0f55) drop-shadow(0 0 14px rgba(200, 170, 255, 0.5)); }
+.lb-chapter-sub { margin: 0; font-size: 18px; font-weight: 500; font-style: italic; color: var(--cream-dim); }
+.lb-chapter-blurb { margin: 2px 0 0; font-size: 18px; line-height: 1.35; color: var(--cream); }
+.lb-chapter-foot { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px 14px; margin-top: auto; padding-top: 8px; }
+.lb-chapter-note { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; min-height: 36px; padding: 4px 12px 4px 10px; border-radius: 999px; background: rgba(169, 133, 255, 0.16); border: 1px solid rgba(169, 133, 255, 0.55); color: #e3d2ff; font-size: 16px; font-weight: 600; }
+.lb-chapter-note .lb-ico { width: 18px; height: 18px; color: var(--gold); }
+@media (max-height: 800px) {
+  .lb-chapter { gap: 8px; padding: 10px 10px 12px; }
+  .lb-chapter-art { height: clamp(120px, 24vh, 240px); }
+  .lb-chapter-blurb, .lb-chapter-sub { font-size: 17px; }
+}
+@media (max-width: 760px) { .lb-chapter-cards { grid-template-columns: minmax(0, 1fr); } }
+/* Big TVs: the chapter cards grow with the screen, so the words read from the sofa (polish-2). */
+@media (min-height: 1000px) and (min-aspect-ratio: 155/100) {
+  .lb-chapters .lb-content { width: min(1560px, calc(100vw - 64px)); }
+  .lb-chapter-cards { width: min(1560px, 100%); gap: 30px; }
+  .lb-chapter { gap: 16px; padding: 16px 16px 20px; }
+  .lb-chapter-art { height: clamp(220px, 34vh, 400px); }
+  .lb-chapter .lb-kicker { font-size: 20px; }
+  .lb-chapter-sub { font-size: 24px; }
+  .lb-chapter-blurb { font-size: 25px; }
+  .lb-chapter-note { min-height: 44px; font-size: 20px; }
+}
+
+/* ---------- Colored flames: the HUD's color panel ---------- */
+/* Under the hero cards in the side column: the boss telegraph, then one chip per color in the
+   room. A chip is grey until its color's light is on, then takes its color and glows, so the
+   colors coming back into the room show in the HUD too. Each chip's --fl is its flame's hex. */
+/* .lb-flames has no box of its own: the telegraph sits in the column (the only place with room),
+   and the chips are a strip on the board's back wall, centred under the message ribbon, below its
+   two-line height (or below a taller ribbon: ui.message sets --ribbon-h), between the map and the bag. */
+.lb-flames { display: contents; }
+.lb-flame-chips {
+  position: fixed;
+  left: calc(var(--bx) + var(--bw) / 2);
+  top: calc(var(--by) + var(--bh) * 0.03 + max(90px, var(--ribbon-h, 0px) + 10px));
+  transform: translateX(-50%);
+  transition: top 0.3s ease;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: max-content;
+  max-width: min(calc(var(--bw) * 0.5), 480px);
+  pointer-events: none;
+  z-index: 2;
+}
+.lb-flame {
+  --fl: #f4c25a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 3px 11px 3px 7px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(251, 240, 214, 0.2);
+  background: rgba(10, 9, 28, 0.84);
+  color: var(--cream-dim);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: border-color 0.5s ease, background 0.5s ease, box-shadow 0.5s ease, color 0.5s ease;
+}
+.lb-flame .lb-ico { width: 20px; height: 20px; color: rgba(217, 205, 178, 0.4); transition: color 0.5s, filter 0.5s; }
+.lb-flame-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+/* The flame's name shows on big screens; smaller ones keep just the colored icon and its effect. */
+.lb-flame-text b { display: none; font-family: var(--font-head); font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-flame-text small { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-flame.is-lit {
+  border-color: var(--fl);
+  color: var(--cream);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--fl) 28%, rgba(16, 14, 42, 0.9)), rgba(16, 14, 42, 0.92));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--fl) 55%, transparent), inset 0 0 12px color-mix(in srgb, var(--fl) 18%, transparent);
+  animation: lb-flame-light 0.7s cubic-bezier(.2, 1.4, .4, 1);
+}
+.lb-flame.is-lit .lb-ico { color: var(--fl); filter: drop-shadow(0 0 6px var(--fl)); }
+.lb-flame.is-lit .lb-flame-text b { color: color-mix(in srgb, var(--fl) 70%, #fff); }
+@keyframes lb-flame-light { 0% { transform: scale(0.94); } 45% { transform: scale(1.04); } 100% { transform: none; } }
+/* The boss's telegraph: "Next: Frosty Breath" in the color it glows, breathing softly. It hangs
+   on the board's back wall under the map (ui.js sets --map-h), where it fits on every layout; the
+   column has no spare row for it at 768 px tall. */
+.lb-telegraph {
+  --fl: #6ec8ff;
+  position: fixed;
+  left: calc(var(--bx) + 8px);
+  top: calc(var(--by) + 8px + var(--map-h, 0px) + 6px);
+  width: clamp(150px, calc(var(--bw) * 0.2), 300px);
+  z-index: 2;
+  pointer-events: auto; /* a tap says what the move does (ux-2 #10) */
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 12px 4px 10px;
+  border-radius: 12px;
+  border: 2px solid var(--fl);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--fl) 30%, rgba(16, 14, 42, 0.92)), rgba(16, 14, 42, 0.94));
+  color: var(--cream);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--fl) 60%, transparent);
+  animation: lb-telegraph 2.2s ease-in-out infinite;
+  transition: border-color 0.6s ease, background 0.6s ease, box-shadow 0.6s ease;
+}
+.lb-telegraph .lb-ico { width: 24px; height: 24px; color: var(--fl); filter: drop-shadow(0 0 6px var(--fl)); }
+.lb-telegraph-text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; min-width: 0; line-height: 1.15; }
+/* "Next:" / "Now:" is always its own line, so the chip keeps one shape in every color (polish-2). */
+.lb-telegraph-text small { flex: 1 0 100%; font-size: 15px; font-weight: 600; color: var(--cream-dim); }
+.lb-telegraph-text b { font-family: var(--font-head); font-weight: 600; font-size: 19px; color: color-mix(in srgb, var(--fl) 75%, #fff); }
+/* Pebblebelly's hearts on their own line in the telegraph (playtest-2 M1). */
+.lb-telegraph-hp { flex: 1 0 100%; display: flex; align-items: center; gap: 5px; font-size: 16px; font-weight: 800; color: #ffd9cf; font-variant-numeric: tabular-nums; }
+.lb-telegraph .lb-telegraph-hp .lb-ico { width: 16px; height: 16px; color: #ff8f7a; filter: none; }
+.lb-anim .lb-telegraph, .lb-busy .lb-telegraph { pointer-events: none; } /* it rests while a move plays or a banner is up */
+@keyframes lb-telegraph { 0%, 100% { box-shadow: 0 0 10px color-mix(in srgb, var(--fl) 45%, transparent); } 50% { box-shadow: 0 0 22px color-mix(in srgb, var(--fl) 80%, transparent); } }
+
+/* ---------- Hero cards: color badges, new gear, new statuses ---------- */
+/* Colored light under a hero's feet: a small pill in the flame's color beside the hearts (an
+   icon, "+1" and the word). The hearts bar steps aside for it: the number says the same thing. */
+.lb-color-badge { flex: none; display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px 2px 4px; border-radius: 999px; font-size: 13px; font-weight: 700; line-height: 1.1; letter-spacing: 0; white-space: nowrap; color: #15123a; background: var(--fl, #f4c25a); box-shadow: 0 0 8px color-mix(in srgb, var(--fl, #f4c25a) 70%, transparent); }
+.lb-color-badge .lb-ico { width: 13px; height: 13px; stroke-width: 2.6; color: #15123a; }
+.lb-color-badge ~ .lb-hp-bar { display: none; }
+/* The hearts number never shrinks for a badge (ux-2 #1). With two or more colors underfoot the badges
+   keep only their icons; the "+1" and the words stay in the tooltip and the card's aria-label. */
+.lb-hp-text:has(+ .lb-color-badge) { flex: none; min-width: max-content; }
+.lb-hearts:has(.lb-color-badge + .lb-color-badge) .lb-color-badge b,
+.lb-hero-top:has(.lb-color-badge + .lb-color-badge) .lb-color-badge b { display: none; }
+.lb-hearts:has(.lb-color-badge + .lb-color-badge) .lb-color-badge,
+.lb-hero-top:has(.lb-color-badge + .lb-color-badge) .lb-color-badge { padding: 2px 4px; }
+.lb-hearts .lb-pips { margin-left: auto; }
+.lb-hero-top .lb-color-badge { display: none; } /* the name row's copy is for 4:3 cards */
+.lb-status-ico.s-frozen { background: #1d4f7a; color: #d8f4ff; }
+.lb-status-ico.s-tint { background: color-mix(in srgb, var(--fl, #6ec8ff) 38%, #15123a); color: var(--fl, #6ec8ff); }
+
+/* ---------- The bag: the item being aimed ---------- */
+.lb-item.is-aiming { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(116, 228, 255, 0.35), 0 0 18px rgba(116, 228, 255, 0.55); animation: none; }
+
+/* ---------- Chapter 2 looks: the Prism Deeps ---------- */
+/* Placeholders for paintings that aren't in yet: the vault, dark or blazing, in the four colors. */
+.lb-fb-prism { background: radial-gradient(circle at 14% 78%, rgba(110, 200, 255, 0.5), transparent 30%), radial-gradient(circle at 38% 84%, rgba(123, 224, 123, 0.4), transparent 28%), radial-gradient(circle at 62% 84%, rgba(255, 122, 82, 0.4), transparent 28%), radial-gradient(circle at 86% 78%, rgba(192, 139, 255, 0.5), transparent 30%), radial-gradient(ellipse at 50% 100%, #2a1550, transparent 60%), linear-gradient(180deg, #07061a, #160f33); }
+.lb-fb-prism-victory { background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.95), rgba(255, 236, 170, 0.7) 12%, rgba(192, 139, 255, 0.45) 30%, rgba(110, 200, 255, 0.25) 46%, transparent 62%), linear-gradient(180deg, #2a2060, #3a3a8a 55%, #5a3a7a); }
+/* Rainbow twinkles and motes (ui.js gives each twinkle its own --hue). */
+.lb-twinkle.is-rainbow { background: radial-gradient(circle, #ffffff 0 9%, hsl(var(--hue, 280) 90% 78%) 16%, hsl(var(--hue, 280) 90% 65% / 0.3) 34%, transparent 60%); }
+.lb-motes.is-rainbow .lb-mote { background: radial-gradient(circle, #fff, hsl(var(--mh, 280) 90% 75% / 0.8) 45%, transparent 70%); }
+.lb-motes.is-rainbow .lb-mote:nth-child(4n + 1) { --mh: 205; }
+.lb-motes.is-rainbow .lb-mote:nth-child(4n + 2) { --mh: 120; }
+.lb-motes.is-rainbow .lb-mote:nth-child(4n + 3) { --mh: 18; }
+.lb-motes.is-rainbow .lb-mote:nth-child(4n + 4) { --mh: 270; }
+/* Boss reveal: Pebblebelly's name in the four colors and a rainbow flash instead of the violet one. */
+.lb-boss.is-prism .lb-boss-name { background: linear-gradient(90deg, #a8e0ff, #b7f5b5 35%, #ffd27a 55%, #ffb088 75%, #e0c4ff); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; filter: drop-shadow(0 5px 0 #2a0f55) drop-shadow(0 0 22px rgba(200, 170, 255, 0.8)); }
+.lb-boss.is-prism .lb-boss-flash { background: radial-gradient(ellipse at 50% 40%, rgba(255, 255, 255, 0.85), rgba(190, 150, 255, 0.45) 30%, rgba(120, 200, 255, 0.25) 50%, rgba(90, 40, 200, 0) 72%); }
+.lb-boss.is-prism .lb-shade { background: radial-gradient(ellipse at 50% 40%, transparent 25%, rgba(10, 6, 30, 0.72) 100%), linear-gradient(180deg, transparent 35%, rgba(10, 6, 30, 0.55) 60%, rgba(10, 6, 30, 0.72) 100%); }
+/* Victory: rainbow rays behind the Prism Crystal, bursts in the four colors and a rainbow title. */
+.lb-rays.is-rainbow { background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0) 0deg 5deg, rgba(255, 255, 255, 0.28) 8deg, rgba(255, 255, 255, 0) 11deg 16deg), conic-gradient(from 0deg, #8fd6ff, #9df0a0, #ffe29a, #ffb088, #d9b3ff, #8fd6ff); }
+.lb-burst.is-blue i { background: radial-gradient(circle, #fff 0 22%, #8fd6ff 44%, rgba(110, 200, 255, 0) 72%); box-shadow: 0 0 8px 2px rgba(110, 200, 255, 0.5); }
+.lb-burst.is-green i { background: radial-gradient(circle, #fff 0 22%, #9df0a0 44%, rgba(123, 224, 123, 0) 72%); box-shadow: 0 0 8px 2px rgba(123, 224, 123, 0.5); }
+.lb-burst.is-red i { background: radial-gradient(circle, #fff 0 22%, #ffb088 44%, rgba(255, 122, 82, 0) 72%); box-shadow: 0 0 8px 2px rgba(255, 122, 82, 0.5); }
+.lb-burst.is-violet i { background: radial-gradient(circle, #fff 0 22%, #d9b3ff 44%, rgba(192, 139, 255, 0) 72%); box-shadow: 0 0 8px 2px rgba(192, 139, 255, 0.5); }
+/* Chapter 2's victory words sit wider and a little smaller, so at 1366 they stay above the little
+   rainbow dragon in Rowan's arms instead of covering it (polish-2). */
+.lb-victory.is-prism .lb-victory-text { max-width: min(960px, calc(100vw - 48px)); font-size: clamp(18px, 1.62vw, 25px); line-height: 1.3; padding: 5px 22px 6px; }
+.lb-victory.is-prism .lb-victory-title { background-image: linear-gradient(100deg, rgba(255, 255, 255, 0) 41%, rgba(255, 255, 255, 0.9) 50%, rgba(255, 255, 255, 0) 59%), linear-gradient(90deg, #a8e0ff, #b7f5b5 30%, #ffe29a 50%, #ffb088 72%, #e0c4ff); }
+
+/* ---------- Screen sizes ---------- */
+/* 4:3 tablets: the bottom dock has no spare row, so the telegraph hangs on the board's back wall
+   under the map (ui.js sets --map-h); the chip strip stays under the ribbon, a little higher. */
+@media (max-aspect-ratio: 155/100) {
+  .lb-telegraph { width: clamp(150px, calc(var(--bw) * 0.21), 260px); min-height: 36px; padding: 3px 10px 3px 8px; background: rgba(10, 9, 28, 0.9); }
+  .lb-telegraph-text small { font-size: 14px; }
+  .lb-telegraph-text b { font-size: 17px; }
+  .lb-flame-chips { top: calc(var(--by) + var(--bh) * 0.03 + max(78px, var(--ribbon-h, 0px) + 10px)); max-width: min(calc(var(--bw) * 0.5), 440px); gap: 4px; }
+  .lb-flame { min-height: 28px; padding: 2px 9px 2px 6px; }
+  .lb-flame .lb-ico { width: 18px; height: 18px; }
+  .lb-flame-text small { font-size: 14px; }
+  /* The narrow cards show the badge in the name row, where the Ready pill is hidden. */
+  .lb-color-badge { font-size: 12px; padding: 2px 5px 2px 4px; }
+  .lb-hero-top .lb-color-badge { display: inline-flex; margin-left: auto; }
+  .lb-hearts .lb-color-badge { display: none; }
+}
+/* Short wide screens (1280x720): tighter chips. */
+@media (min-aspect-ratio: 155/100) and (max-height: 740px) {
+  .lb-flame { min-height: 28px; }
+  .lb-telegraph { min-height: 36px; }
+}
+/* Big TVs: room for each flame's name above its effect. */
+@media (min-height: 1000px) and (min-aspect-ratio: 155/100) {
+  .lb-flame-chips { gap: 8px; max-width: min(calc(var(--bw) * 0.5), 680px); }
+  .lb-flame { min-height: 46px; gap: 8px; padding: 4px 14px 4px 9px; border-radius: 16px; }
+  .lb-flame .lb-ico { width: 24px; height: 24px; }
+  .lb-flame-text b { display: block; font-size: 16px; }
+  .lb-flame-text small { font-size: 15px; font-weight: 500; }
+  .lb-telegraph { min-height: 48px; }
+  .lb-telegraph-text b { font-size: 23px; }
+  .lb-color-badge { font-size: 14px; }
+}
+/* Calm motion: no rainbow twinkles; the chips and the telegraph hold still (the global rule above
+   already stops their animations). */
+.lb-calm .lb-twinkle.is-rainbow { display: none; }
+/* Boss chips get their own row above the canvas: even a full bag or a hopping boss cannot
+   push them onto a figure or a square. Ordinary rooms keep the existing back-wall strip. */
+:root:has(.lb-hud:not([hidden]) .lb-flame-chips.is-boss) { --boss-strip: 44px; }
+.lb-flame-chips.is-boss {
+  left: var(--bx);
+  top: 7px;
+  width: var(--bw);
+  max-width: none;
+  transform: none;
+  flex-wrap: nowrap;
+  gap: 6px;
+  transition: none;
+}
+.lb-flame-chips.is-boss .lb-flame { min-height: 30px; padding: 3px 11px 3px 7px; gap: 6px; animation: none; }
+.lb-flame-chips.is-boss .lb-ico { width: 20px; height: 20px; }
+.lb-flame-chips.is-boss .lb-flame-text b { display: none; }
+.lb-flame-chips.is-boss .lb-flame-text small { font-size: 15px; font-weight: 600; }

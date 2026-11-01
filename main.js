@@ -6,9 +6,16 @@
 // plays it. That keeps the canvas, the dice tray and the hero bar telling the same story at the
 // same moment: hearts drop in the hero bar when the number pops on the board, not before.
 //
+// Phase 2 (docs/PHASE-2.md): New Adventure first asks which chapter (ui.showChapters), then the
+// party, then that chapter's story and rooms. The chapter goes to LB_RULES.newGame and ui.setChapter;
+// the boss reveal, victory, map and music then follow it. Continue resumes either chapter (an old
+// save is Chapter 1). Every new event (tint, glow, blink, split, breath, pulls, frozen) plays
+// through board.play like the rest; main.js only adds the dice tray for breath and the HUD moments.
+//
 // URL options: ?test=1 exposes window.LB_TEST for automated playtests, ?room=<id> jumps straight
-// into a room, ?fast=1 speeds up animations (?fast=2: fastest, no dice tray), ?seed=<n> fixes the
-// dice, ?intro=0 skips the room intro banners and the boss reveal, ?reset=1 forgets the saved game.
+// into a room (in that room's chapter), ?chapter=2 (or a chapter id) picks the chapter without the
+// cards, ?fast=1 speeds up animations (?fast=2: fastest, no dice tray), ?seed=<n> fixes the dice,
+// ?intro=0 skips the room intro banners and the boss reveal, ?reset=1 forgets the saved game.
 (function (root) {
   'use strict';
 
@@ -19,6 +26,7 @@
   const TEST = params.get('test') === '1';
   const START_ROOM = params.get('room');
   const SEED = params.get('seed');
+  const CHAPTER = params.get('chapter');
   let skipIntro = params.get('intro') === '0';
 
   // The board names its sounds after what happens; audio.js has a smaller, softer palette.
@@ -31,10 +39,12 @@
   };
 
   // Everything the glue knows. phase says what the game is waiting for:
-  // boot | title | party | story | boss | intro | play | anim | monsters | cleared | camp | victory
+  // boot | title | chapters | party | story | boss | intro | play | anim | monsters | cleared | camp | victory
   const app = {
     state: null,
     phase: 'boot',
+    chapter: null, // the chapter picked on the cards (or ?chapter=), until newGame takes it
+    toldColors: [], // colored flames whose rule the ribbon has explained this adventure
     selected: null,
     pending: null, // the action being aimed: { action, kind, item, area, aimAt }
     busy: 0,
@@ -57,10 +67,34 @@
   const pause = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms * (app.turbo ? 0.05 : app.fast ? 0.3 : 1))));
   const roomDef = (id) => (DATA.rooms || []).find((r) => r.id === id) || null;
   const itemDef = (id) => (DATA.items || {})[id] || { id, name: String(id || '').replace(/-/g, ' ') };
+  // The chapter the game is in (its data entry), or null before a game starts.
+  const chapterOf = (st) => {
+    st = st || app.state;
+    if (!st) return null;
+    return R.chapterOf ? R.chapterOf(st) : (DATA.chapters || []).find((c) => c.id === st.chapter) || null;
+  };
+  // A chapter id from an id, a number ("2") or a chapter object; null when there is no such chapter.
+  const chapterId = (want) => {
+    const list = DATA.chapters || [];
+    if (want == null || want === '') return null;
+    const id = typeof want === 'object' ? want.id : String(want);
+    const hit = list.find((c, i) => c.id === id || String(c.number || i + 1) === id);
+    return hit ? hit.id : null;
+  };
+  // Which chapter a room belongs to (Chapter 1 for rooms without one).
+  const roomChapter = (roomId) => {
+    const r = roomDef(roomId);
+    return (r && r.chapter) || ((DATA.chapters || [])[0] || {}).id || null;
+  };
+  // A text line: the chapter's own words first (Pebblebelly's victory), then the top-level ones.
   const textOf = (key, fallback) => {
+    const ch = chapterOf();
+    const own = ch && ch.text ? ch.text[key] : undefined;
+    if (own != null) return own;
     const t = (DATA.text || {})[key];
     return t == null ? fallback : t;
   };
+  const flameOf = (color) => (color && (DATA.flames || {})[color]) || null;
   const an = (name) => (/^[aeiou]/i.test(name) ? 'an ' : 'a ') + name;
 
   // Where a square (fractions are fine) is on screen, in viewport CSS pixels, lifted by `lift`
@@ -81,9 +115,10 @@
     const mean = (k) => hs.reduce((s, h) => s + h.at[k], 0) / hs.length;
     return screenPoint([mean(0), mean(1)], 0.8);
   }
-  // The Heart Lantern's flame (or the middle of the back wall when there is none).
+  // The Heart Lantern's flame, the Prism Crystal in Chapter 2 (or the middle of the back wall).
   function lanternFocus(st) {
-    const hl = (((st || app.state) || {}).props || []).find((p) => p.type === 'heart-lantern');
+    const props = ((st || app.state) || {}).props || [];
+    const hl = props.find((p) => p.type === 'heart-lantern') || props.find((p) => p.type === 'prism-heart');
     return screenPoint(hl ? hl.at : [5.5, 0], hl ? 1.4 : 1);
   }
 
@@ -156,9 +191,10 @@
   function music(mood) {
     try { if (root.LB_AUDIO && root.LB_AUDIO.music) root.LB_AUDIO.music(mood); } catch (err) { /* never breaks the game */ }
   }
-  // Each room has its dungeon music, or the boss's.
+  // Each room has its chapter's dungeon music ('explore', or 'prism' in the Prism Deeps), or the boss's.
   function roomMusic(st) {
-    music(roomDef(st.roomId).boss ? 'boss' : 'explore');
+    const ch = chapterOf(st);
+    music(roomDef(st.roomId).boss ? 'boss' : (ch && ch.music) || 'explore');
     musicLight();
   }
   // The dungeon's music brightens as the room's braziers are lit.
@@ -222,7 +258,8 @@
   // Dice labels for a blast's targets. Two dice both labelled "The Gloomling" can't be told apart,
   // so say which one: "The left Gloomling", "The right Gloomling" (ux #12).
   function blastLabels(e) {
-    const out = e.dice.map((x) => cap(theMonster(e.types[x.target])));
+    // A breath hits heroes, who have their own names.
+    const out = e.dice.map((x) => (app.state.heroes[x.target] ? heroName(x.target) : cap(theMonster(e.types[x.target]))));
     const at = (k) => (e.spots || {})[e.dice[k].target] || [0, 0];
     const groups = {};
     e.dice.forEach((x, k) => { (groups[out[k]] = groups[out[k]] || []).push(k); });
@@ -253,7 +290,14 @@
     return monsterDef(types[uid]).damage || null;
   }
   // Events that start something new; a damage or heal belongs to the nearest one before it.
-  const CAUSES = { roll: 1, attack: 1, ability: 1, turn: 1, room: 1, light: 1, bright: 1 };
+  const CAUSES = { roll: 1, attack: 1, ability: 1, turn: 1, room: 1, light: 1, bright: 1, breath: 1 };
+
+  // The Color Dragon's breath move for a color ("Frost Breath"), from its data.
+  function breathName(e, types) {
+    const moves = monsterDef(types[e.uid]).moves || [];
+    const mv = moves.find((m) => m.color === e.color && /breath/.test(m.id || ''));
+    return (mv && mv.name) || cap(String(e.color || '')) + ' breath';
+  }
 
   // A dice-tray moment to play just before events[i], or null.
   function diceBefore(events, i, types, shown) {
@@ -271,17 +315,20 @@
         const spec = effectSpec(p);
         return { t: 'say', dice: [e], d: spec && spec.d, name: itemDef(p.item).name };
       }
-      if (p.t !== 'ability' || shown.has(p)) return null;
-      // An ability or item: all its dice share one tray (a Fireburst on three monsters).
+      if ((p.t !== 'ability' && p.t !== 'breath') || shown.has(p)) return null;
+      // An ability, item or breath: all its dice share one tray (a Fireburst on three monsters,
+      // Pebblebelly's Frost Breath on the whole party).
       shown.add(p);
       const group = [];
-      for (let k = j + 1; k < events.length && group.length < 3; k++) {
+      const most = p.t === 'breath' ? 4 : 3; // a breath can hit the whole party; abilities and items keep Chapter 1's three
+      for (let k = j + 1; k < events.length && group.length < most; k++) {
         const x = events[k];
         if (CAUSES[x.t] && x !== p) break;
         if (x.t === e.t && x.by === p.uid && x.rolls && x.rolls.length) group.push(x);
       }
-      const spec = effectSpec(p);
-      const name = p.name || (p.item ? itemDef(p.item).name : null);
+      // A breath's damage events carry their die (`dice`); the move's name labels the tray.
+      const spec = p.t === 'breath' ? e.dice || null : effectSpec(p);
+      const name = p.t === 'breath' ? breathName(p, types) : p.name || (p.item ? itemDef(p.item).name : null);
       return { t: 'say', dice: group, d: spec && spec.d, plus: spec ? spec.plus : undefined, name, cause: p };
     }
     return null;
@@ -292,8 +339,10 @@
     const hero = (id) => !!(st.heroes || {})[id];
     switch (e.t) {
       case 'damage': case 'heal': return hero(e.target);
-      case 'down': case 'up': case 'status': return hero(e.uid);
+      case 'down': case 'up': case 'status': case 'tint': return hero(e.uid);
       case 'turn': case 'loot': case 'gold': case 'cleared': case 'victory': case 'partyDown': return true;
+      case 'glow': return true; // the boss telegraph chip changes color
+      case 'say': return !!(e.move && e.color); // a colored boss move starts: the chip says "Now:"
       case 'ability': case 'attack': return !!e.item;
       default: return false;
     }
@@ -303,7 +352,18 @@
   function wordsFor(e) {
     const hero = (id) => heroName(id);
     switch (e.t) {
-      case 'light': return e.by && app.state.heroes[e.by] ? `${hero(e.by)} lit a brazier!` : null;
+      case 'light': {
+        if (!e.by || !app.state.heroes[e.by]) return null;
+        const p = (app.state.props || []).find((x) => x.uid === e.prop);
+        const f = p && flameOf(p.color);
+        return f ? `${hero(e.by)} lit the ${f.name || p.color + ' brazier'}!` : `${hero(e.by)} lit a brazier!`;
+      }
+      case 'tint': {
+        if (!app.state.heroes[e.uid]) return null;
+        const f = flameOf(e.color);
+        return `${hero(e.uid)} uses the ${itemDef(e.item).name}: ${f && f.name ? 'the ' + f.name : e.color + ' light'} fills the lantern!`;
+      }
+      case 'heal': return e.source === 'green' && app.state.heroes[e.target] ? `The green light heals ${hero(e.target)}!` : null;
       case 'bright': return textOf('bright', 'The room is bright!');
       // The last word on the board before the victory light: the big news, not "the room is bright".
       case 'victory': return textOf('victoryTitle', 'The Heart Lantern blazes again!');
@@ -331,6 +391,7 @@
     const out = [];
     let hud = [];
     let words = [];
+    const lesson = flameLesson(events);
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
       if (!e || !e.t) continue;
@@ -364,7 +425,23 @@
         words = [];
       }
     }
+    if (lesson) out.push({ t: 'say', key: 'flame', text: lesson });
     return out;
+  }
+
+  // The first time a color's brazier is lit in the adventure, the ribbon says the whole rule once
+  // (the HUD chips only have room for the short version). Null when there is nothing new to tell.
+  function flameLesson(events) {
+    const st = app.state;
+    for (const e of events) {
+      if (!e || e.t !== 'light' || !st) continue;
+      const p = (st.props || []).find((x) => x.uid === e.prop);
+      const f = p && flameOf(p.color);
+      if (!f || !f.text || app.toldColors.indexOf(p.color) >= 0) continue;
+      app.toldColors.push(p.color);
+      return `${f.name || cap(p.color) + ' flame'}: ${f.text}`;
+    }
+    return null;
   }
 
   function rollLabel(e, types) {
@@ -398,6 +475,23 @@
           }
           if (e.item && e.on) dropItem(e.item);
           break;
+        case 'tint': // a color crystal: the lantern's new color shows on the hero card
+          if (h) h.status.tint = e.color;
+          if (e.item) dropItem(e.item);
+          break;
+        case 'glow': { // the boss telegraph chip follows the glow
+          const m = (v.monsters || []).find((x) => x.uid === e.uid);
+          if (m) {
+            m.glow = e.color;
+            m.acting = false; // the move is over: the chip goes back to "Next:"
+          }
+          break;
+        }
+        case 'say': { // a colored boss move starts: until the glow moves on the chip says "Now:" (polish-2)
+          const m = e.move && e.color ? (v.monsters || []).find((x) => x.uid === e.uid) : null;
+          if (m) m.acting = true;
+          break;
+        }
         case 'turn':
           v.side = e.side;
           v.round = e.round;
@@ -407,8 +501,9 @@
           if (e.keeps && v.heroes[e.by]) {
             // Gear shows on its hero's card as the ribbon names it (playtest L2).
             const g = itemDef(e.item).gear || {};
-            const gear = v.heroes[e.by].gear = Object.assign({ defense: 0, damage: 0, move: 0 }, v.heroes[e.by].gear);
+            const gear = v.heroes[e.by].gear = Object.assign({ defense: 0, damage: 0, move: 0, attack: 0, hearts: 0, light: 0 }, v.heroes[e.by].gear);
             for (const k of Object.keys(g)) gear[k] = (gear[k] || 0) + g[k];
+            if (g.hearts) v.heroes[e.by].maxHp = (v.heroes[e.by].maxHp || 0) + g.hearts; // the Heart Locket
           } else if (e.item !== 'gold' && !e.keeps) v.bag.push(e.item);
           break;
         case 'gold': v.gold = (v.gold || 0) + (e.amount || 0); break;
@@ -559,8 +654,10 @@
       options: opts,
       endConfirm: live && !!app.endConfirm,
       pending: live && app.pending ? app.pending.kind : null,
-      // An armed ability's name, so the hero bar can say "tap Sunburst again".
-      armed: armed ? ((DATA.heroes[app.selected] || {}).ability || {}).name || 'it' : null,
+      item: live && app.pending ? app.pending.item || null : null, // the bag item being aimed gets its ring
+      // An armed ability's or treasure's name, so the hero bar can say "tap Sunburst again" or
+      // "tap Rainbow Cake again" (ux-2 #3).
+      armed: armed ? (app.pending.item ? itemDef(app.pending.item).name : ((DATA.heroes[app.selected] || {}).ability || {}).name || 'it') : null,
     });
     const allDone = live && app.state.status === 'playing' && !readyHeroes(app.state).length;
     ui.root.classList.toggle('lb-all-done', allDone);
@@ -623,6 +720,18 @@
   }
 
   // After a hero's move or action: carry on with them, or hand over to the next ready hero.
+  // Is a sneaky monster (the Greyling) still unseen within this hero's reach? A friend may light it
+  // up this turn, so the hero keeps their action (playtest-2 M2). Chapter 1 has no sneaky monsters.
+  function lurkingInReach(st, id) {
+    const h = st.heroes[id];
+    if (!h || !h.at || h.down) return false;
+    const reach = (DATA.heroes[id] || {}).range || 1;
+    return (st.monsters || []).some((m) => m.hp > 0 && m.at
+      && (monsterDef(m.type).traits || []).indexOf('sneaky') >= 0
+      && !R.visible(st, m.uid)
+      && R.cells(m).some((c) => R.distance(c, h.at) <= reach));
+  }
+
   function nextStep() {
     const st = app.state;
     app.pending = null;
@@ -630,6 +739,12 @@
       const o = R.options(st, app.selected);
       if (o.moves.length || o.actions.some((a) => a.kind !== 'wait')) {
         refresh();
+        return;
+      }
+      if (lurkingInReach(st, app.selected)) {
+        refresh(); // first: the next HUD redraw clears a hint (armAbility does the same)
+        const nm = heroName(app.selected);
+        ui.hint(`Something is hiding near ${nm}! A friend can light a brazier to show it, or tap "${nm} is done".`);
         return;
       }
       R.act(st, app.selected, { kind: 'wait' }); // nothing left to do: their turn ends by itself
@@ -821,7 +936,8 @@
   async function peekAtRoom() {
     const calm = !!ui.settings().reducedMotion;
     await pause(calm ? 800 : 1500);
-    ui.message('The Gloam swallows the light!');
+    const ch = chapterOf();
+    ui.message(ch && ch.number > 1 ? 'The grey swallows the colors!' : 'The Gloam swallows the light!');
     board.peek(false);
     await pause(1300);
   }
@@ -855,7 +971,15 @@
     app.cheering = false;
     const found = st.found || { items: [], gold: 0 };
     // focus: where the lantern iris closes in when they walk through the door.
-    const arch = await waitFor('cleared', ui.showCleared({ loot: found.items.slice(), gold: found.gold, focus: partyFocus(st) }, R.exits(st)));
+    const arch = await waitFor('cleared', ui.showCleared({ loot: found.items.slice(), gold: found.gold, focus: partyFocus(st),
+      shop: st.shop, partyGold: () => st.gold,
+      onBuy: (item) => {
+        if (app.phase !== 'cleared' || !R.buy(st, item).length) return false;
+        save();
+        refreshHud();
+        return true;
+      },
+    }, R.exits(st)));
     const events = R.leave(st, arch);
     if (!events.length) {
       // No doorway matched (it shouldn't happen): try the first one so nobody gets stuck.
@@ -943,9 +1067,10 @@
     if (app.pending && sel) {
       const p = app.pending;
       if (p.confirm) {
-        // An armed ability: a tap inside its glow uses it.
-        if (hasCell(p.show && p.show.area, at)) {
-          doAct(sel, actionFrom(p.action));
+        // An armed ability: a tap inside its glow uses it. An armed treasure with one ringed
+        // friend (the Phoenix Feather): a tap on that friend uses it (ux-2 #3).
+        if (hasCell(p.show && p.show.area, at) || (p.target && uid === p.target)) {
+          doAct(sel, actionFrom(p.action, p.target ? { target: p.target } : null));
           return;
         }
       } else if (p.area) {
@@ -987,7 +1112,8 @@
       }
       const md = monsterDef(monster.type);
       const why = !sel ? 'Tap a hero first.' : 'Too far away to hit from here.';
-      ui.hint(md.name + ': ' + monster.hp + ' of ' + monster.maxHp + ' hearts. ' + why);
+      // ui.monsterInfo adds the monster's habit in plain words ("Sneaky: only brazier light shows it").
+      ui.hint(ui.monsterInfo ? ui.monsterInfo(monster, why) : md.name + ': ' + monster.hp + ' of ' + monster.maxHp + ' hearts. ' + why);
       return;
     }
     const prop = uid && st.props.find((p) => p.uid === uid);
@@ -1059,6 +1185,17 @@
     ui.hint(`${what} Tap ${name} again to use it!`);
   }
 
+  // Chapter 2's treasures (crystals, the Rainbow Cake, the Phoenix Feather) are used up in one go,
+  // so the first tap only says what they do; a second tap uses them, any other tap puts them away
+  // (ux-2 #3). Chapter 1's items keep their one-tap use, so Chapter 1 plays exactly as before.
+  const ARM_FIRST = { tint: 1, feast: 1, revive: 1 };
+  function armItem(sel, a, target) {
+    const it = itemDef(a.item);
+    app.pending = { action: a, kind: a.kind, item: a.item, area: false, aimAt: null, confirm: true, target: target || null };
+    refresh();
+    ui.hint(`${it.name}: ${it.text || ''} Tap it again to use it!`);
+  }
+
   // A button in the hero bar: actions with one possible target happen at once, others glow
   // their targets and wait for a tap.
   function chooseAction(a) {
@@ -1066,14 +1203,19 @@
     if (!a || !sel) return;
     ui.hideDice();
     if (app.pending && app.pending.action.kind === a.kind && app.pending.action.item === a.item) {
-      // Tapping an armed ability again uses it; tapping any other glowing button again puts it away.
-      if (app.pending.confirm) doAct(sel, actionFrom(app.pending.action));
+      // Tapping an armed ability or treasure again uses it; tapping any other glowing button again puts it away.
+      if (app.pending.confirm) doAct(sel, actionFrom(app.pending.action, app.pending.target ? { target: app.pending.target } : null));
       else cancelPending();
       return;
     }
     const aim = aimOf(a);
     if (aim === 'none' && a.kind === 'ability') {
       armAbility(sel, a);
+      return;
+    }
+    const only = aim === 'list' && targetsOf(a).length === 1 ? targetsOf(a)[0] : null;
+    if (a.item && ARM_FIRST[itemDef(a.item).kind] && (aim === 'none' || only)) {
+      armItem(sel, a, only);
       return;
     }
     if (aim === 'none') {
@@ -1089,18 +1231,14 @@
     const heroesOnly = targetsOf(a).every((x) => !!app.state.heroes[x]);
     if (aim === 'area') ui.hint('Tap a glowing square to aim.');
     else if (a.kind === 'help') ui.hint('Tap the friend to help up.');
+    else if (heroesOnly && a.item && itemDef(a.item).kind === 'revive') ui.hint('Tap a dizzy friend, anywhere in the room.');
     else if (heroesOnly) ui.hint('Tap the hero to heal.');
     else if (a.kind === 'light' || a.kind === 'open') ui.hint('Tap the one you want.');
     else ui.hint('Tap a monster with a red ring.');
   }
 
   const handlers = {
-    onNewGame: () => {
-      if (app.busy) return;
-      app.phase = 'party';
-      app.waiting = 'party';
-      ui.showParty(DATA.heroes);
-    },
+    onNewGame: () => { chooseChapter().catch(log); },
     onContinue: () => { continueGame().catch(log); },
     onStart: (names) => { newAdventure(names).catch(log); },
     onSelectHero: (id) => {
@@ -1146,19 +1284,52 @@
     ui.showTitle({ canContinue: !!loadSave() });
   }
 
-  function newState(names) {
+  // New Adventure: the chapter cards first (unless ?chapter= already picked one), then the party.
+  async function chooseChapter() {
+    if (app.busy) return;
+    let id = chapterId(CHAPTER);
+    if (!id) {
+      app.phase = 'chapters';
+      const picked = await waitFor('chapters', ui.showChapters(DATA.chapters || []));
+      if (picked == null) {
+        // Back: the UI has already put the title screen back up.
+        app.phase = 'title';
+        app.waiting = 'title';
+        return;
+      }
+      id = picked;
+    }
+    app.chapter = id;
+    if (ui.setChapter) ui.setChapter(id);
+    app.phase = 'party';
+    app.waiting = 'party';
+    ui.showParty(DATA.heroes);
+  }
+
+  // A fresh game in `chapter` (an id; the picked one, else Chapter 1).
+  function newState(names, chapter) {
     const seed = SEED != null && SEED !== '' ? Number(SEED) : TEST ? 1 : undefined;
-    return R.newGame({ data: DATA, seed, names: names || {} });
+    const st = R.newGame({ data: DATA, seed, names: names || {}, chapter: chapter || app.chapter || undefined });
+    app.toldColors = [];
+    return st;
+  }
+
+  // Tells the UI which chapter's screens and words to use (a no-op before Phase 2's ui.js).
+  function syncChapter(st) {
+    if (ui && ui.setChapter) ui.setChapter((st && st.chapter) || null);
   }
 
   async function newAdventure(names) {
     if (app.busy) return;
     app.state = newState(names);
     app.selected = null;
+    syncChapter(app.state);
     board.setState(app.state);
     app.phase = 'story';
-    if (!skipIntro) await waitFor('story', ui.showStory(DATA.story));
-    await enterRoom(DATA.startRoom || DATA.rooms[0].id);
+    const ch = chapterOf(app.state);
+    if (!skipIntro) await waitFor('story', ui.showStory((ch && ch.story) || DATA.story));
+    const first = (R.startRoom && R.startRoom(app.state)) || (ch && ch.startRoom) || DATA.startRoom || DATA.rooms[0].id;
+    await enterRoom(first);
   }
 
   // Back to where the saved game left off.
@@ -1171,6 +1342,7 @@
     app.state = st;
     app.selected = null;
     app.pending = null;
+    syncChapter(st); // an old save comes back as Chapter 1
     board.setState(st);
     ui.clearScreens();
     if (st.status === 'cleared') {
@@ -1261,13 +1433,16 @@
     return settle().then(() => result);
   }
 
+  // Jumps to any room, in either chapter: a room from another chapter starts a fresh game there.
   async function goRoom(id, opts) {
     if (!roomDef(id)) return false;
     await settle();
     const keep = skipIntro;
     skipIntro = !(opts && opts.intro);
-    if (!app.state || (opts && opts.fresh)) app.state = newState(savedNames());
+    const chapter = roomChapter(id);
+    if (!app.state || (opts && opts.fresh) || (app.state.chapter || chapter) !== chapter) app.state = newState(savedNames(), chapter);
     app.selected = null;
+    syncChapter(app.state);
     board.setState(app.state);
     const run = enterRoom(id).catch(log).then(() => { skipIntro = keep; });
     if (!skipIntro) {
@@ -1279,10 +1454,15 @@
   }
 
   // Taps the main button on whichever screen is waiting (story, intro, boss reveal, cleared, camp).
+  // From the title it also picks Chapter 1 on the cards, so flows written before Phase 2 still land
+  // on the party screen; a test that wants the cards clicks New Adventure itself (walkthrough2).
   function next() {
     const w = waitingFor();
+    if (w === 'title') {
+      return click('.lb-title [data-k="new"]').then((r) => (r === 'chapters' ? click('.lb-chapters [data-k="start"]') : r));
+    }
     const pick = {
-      title: '.lb-title [data-k="new"]', party: '.lb-party [data-k="start"]', story: '.lb-story [data-k="go"]',
+      title: '.lb-title [data-k="new"]', chapters: '.lb-chapters [data-k="start"]', party: '.lb-party [data-k="start"]', story: '.lb-story [data-k="go"]',
       intro: '.lb-intro [data-k="go"]', boss: '.lb-boss [data-k="fight"]', cleared: '.lb-cleared [data-arch], .lb-cleared [data-k="onward"]',
       camp: '.lb-camp [data-k="retry"]', victory: '.lb-victory [data-k="again"]',
     }[w];
@@ -1292,8 +1472,9 @@
     const from = waitingFor();
     const b = document.querySelector(selector);
     if (!b) return Promise.resolve('missing:' + selector);
+    const inShop = !!b.closest('.lb-shop'); // A card replaces itself when lifted.
     b.click();
-    return settle(from);
+    return settle(inShop ? null : from);
   }
 
   function exposeTest() {
@@ -1331,6 +1512,8 @@
       },
       // Extras for the playtest tools.
       phase: () => waitingFor() || app.phase,
+      shop: () => ({ open: !!(app.state && app.state.status === 'cleared' && app.state.shop && document.querySelector('.lb-shop')),
+        stock: clone(app.state && app.state.shop ? app.state.shop.stock : []), gold: app.state ? app.state.gold : 0 }),
       selected: () => app.selected,
       select: (id) => {
         if (app.phase === 'play' && !app.busy) select(id);
@@ -1341,6 +1524,12 @@
       click,
       choose: (arch) => click(arch ? `.lb-cleared [data-arch="${arch}"]` : '.lb-cleared [data-arch], .lb-cleared [data-k="onward"]'),
       retry: () => click('.lb-camp [data-k="retry"]'),
+      // Phase 2: the chapter in play (an id), and the Start button of a chapter card ('prism-deeps' or 2).
+      chapter: () => (app.state && app.state.chapter) || app.chapter || chapterId(CHAPTER) || null,
+      pick: (ch) => {
+        const id = chapterId(ch);
+        return click(id ? `.lb-chapters [data-k="start"][data-chapter="${id}"]` : '.lb-chapters [data-k="start"]');
+      },
       // Changes the live state (tests only), then redraws everything.
       patch: (fn) => {
         if (typeof fn === 'function' && app.state) fn(app.state);
@@ -1383,7 +1572,8 @@
     if (params.get('reset') === '1') clearSave();
     if (TEST) exposeTest();
     if (START_ROOM && roomDef(START_ROOM)) {
-      app.state = newState(savedNames());
+      app.state = newState(savedNames(), roomChapter(START_ROOM));
+      syncChapter(app.state);
       board.setState(app.state);
       enterRoom(START_ROOM).catch(log);
     } else {
